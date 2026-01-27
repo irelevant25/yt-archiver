@@ -26,8 +26,14 @@ COPY nginx.conf /etc/nginx/http.d/default.conf
 # Copy supervisor configuration
 COPY supervisord.conf /etc/supervisord.conf
 
+# Copy entrypoint script
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Set permissions
-RUN chown -R www-data:www-data /var/www/html /data
+RUN chown -R www-data:www-data /var/www/html \
+    && chown -R www-data:www-data /data \
+    && chmod -R 755 /data
 
 # Expose port
 EXPOSE 80
@@ -36,5 +42,5 @@ EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD curl -f http://localhost/ || exit 1
 
-# Start services
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+# Start services via entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
