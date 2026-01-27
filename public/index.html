@@ -1227,10 +1227,10 @@
                     </td>
                     <td>
                         <div class="video-actions">
-                            <a href="/api.php?action=serve&file=${encodeURIComponent(video.filename)}" class="action-btn" download>
+                            <button class="action-btn" onclick="downloadFile('${escapeHtml(video.filename)}')">
                                 <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                                 Download
-                            </a>
+                            </button>
                             <button class="action-btn delete" onclick="showDeleteModal('${video.id}')">
                                 <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
                                 Delete
@@ -1368,6 +1368,18 @@
                 closeDeleteModal();
             }
         });
+
+        // Download file - use direct link for better large file handling
+        function downloadFile(filename) {
+            const link = document.createElement('a');
+            link.href = `/download/${encodeURIComponent(filename)}`;
+            link.download = filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('Download started...', 'success');
+        }
 
         // Initialize
         async function init() {
