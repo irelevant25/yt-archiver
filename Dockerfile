@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     ffmpeg \
     curl \
     bash \
+    procps \
     && pip3 install --break-system-packages yt-dlp
 
 # Configure PHP
