@@ -16,7 +16,7 @@ function getDatabase(): array {
 }
 
 function saveDatabase(array $db): void {
-    file_put_contents(DB_FILE, json_encode($db, JSON_PRETTY_PRINT));
+    file_put_contents(DB_FILE, json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 function getQueue(): array {
@@ -25,14 +25,23 @@ function getQueue(): array {
 }
 
 function saveQueue(array $queue): void {
-    file_put_contents(QUEUE_FILE, json_encode($queue, JSON_PRETTY_PRINT));
+    file_put_contents(QUEUE_FILE, json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 function saveProgress(array $progress): void {
     file_put_contents(PROGRESS_FILE, json_encode($progress));
 }
 
-function processQueue(): void {
+function clearProgress(): void {
+    saveProgress(['percent' => 0, 'status' => 'idle', 'title' => '', 'id' => null]);
+}
+
+function isStillCurrentDownload(string $id): bool {
+    $queue = getQueue();
+    return $queue['current'] !== null && $queue['current']['id'] === $id;
+}
+
+function processNextInQueue(): void {
     $queue = getQueue();
     
     if (empty($queue['queue'])) {
@@ -44,9 +53,17 @@ function processQueue(): void {
     $queue['current'] = $item;
     saveQueue($queue);
     
+    // Reset progress
+    saveProgress([
+        'percent' => 0,
+        'status' => 'starting',
+        'title' => 'Fetching video info...',
+        'id' => $item['id']
+    ]);
+    
     // Start download
     $cmd = sprintf(
-        'php %s %s %s %s',
+        'php %s %s %s %s > /dev/null 2>&1 &',
         __FILE__,
         escapeshellarg($item['id']),
         escapeshellarg($item['url']),
@@ -64,7 +81,12 @@ $id = $argv[1];
 $url = $argv[2];
 $format = $argv[3];
 
-// Update progress
+// Check if we're still the current download (might have been cancelled)
+if (!isStillCurrentDownload($id)) {
+    exit(0);
+}
+
+// Update progress - starting
 saveProgress([
     'percent' => 0,
     'status' => 'starting',
@@ -78,11 +100,21 @@ $infoCmd = sprintf(
     escapeshellarg($url)
 );
 $infoJson = shell_exec($infoCmd);
+
+// Check if cancelled
+if (!isStillCurrentDownload($id)) {
+    exit(0);
+}
+
 $info = json_decode($infoJson, true);
 
 $title = $info['title'] ?? 'Unknown';
-$title = preg_replace('/[^\w\s\-\.]/', '', $title);
-$title = substr($title, 0, 100);
+$title = preg_replace('/[^\w\s\-\.\(\)\[\]]/', '', $title);
+$title = trim(substr($title, 0, 100));
+
+if (empty($title)) {
+    $title = 'video_' . $id;
+}
 
 saveProgress([
     'percent' => 5,
@@ -117,6 +149,17 @@ $lastPercent = 5;
 while (!feof($handle)) {
     $line = fgets($handle);
     
+    // Check if cancelled
+    if (!isStillCurrentDownload($id)) {
+        pclose($handle);
+        // Clean up partial files
+        $files = glob(VIDEOS_DIR . '/' . $id . '_*');
+        foreach ($files as $file) {
+            @unlink($file);
+        }
+        exit(0);
+    }
+    
     // Parse progress from yt-dlp output
     if (preg_match('/\[download\]\s+(\d+(?:\.\d+)?)%/', $line, $matches)) {
         $percent = min(95, 5 + (floatval($matches[1]) * 0.9));
@@ -134,9 +177,24 @@ while (!feof($handle)) {
 
 $exitCode = pclose($handle);
 
+// Check if cancelled before finalizing
+if (!isStillCurrentDownload($id)) {
+    $files = glob(VIDEOS_DIR . '/' . $id . '_*');
+    foreach ($files as $file) {
+        @unlink($file);
+    }
+    exit(0);
+}
+
 // Find the downloaded file
 $files = glob(VIDEOS_DIR . '/' . $id . '_*');
-$downloadedFile = !empty($files) ? basename($files[0]) : null;
+
+// Filter out .part files
+$files = array_filter($files, function($f) {
+    return !preg_match('/\.(part|ytdl)$/', $f);
+});
+
+$downloadedFile = !empty($files) ? basename(reset($files)) : null;
 
 if ($downloadedFile && $exitCode === 0) {
     saveProgress([
@@ -146,21 +204,32 @@ if ($downloadedFile && $exitCode === 0) {
         'id' => $id
     ]);
     
-    // Add to database
+    // Add to database ONLY after successful completion
     $db = getDatabase();
     $ext = pathinfo($downloadedFile, PATHINFO_EXTENSION);
+    $filepath = VIDEOS_DIR . '/' . $downloadedFile;
     
-    $db['videos'][] = [
-        'id' => $id,
-        'title' => $title,
-        'filename' => $downloadedFile,
-        'type' => $ext === 'mp3' ? 'audio' : 'video',
-        'format' => $ext,
-        'size' => filesize(VIDEOS_DIR . '/' . $downloadedFile),
-        'created_at' => date('c')
-    ];
+    // Check if this ID already exists in database (prevent duplicates)
+    $exists = false;
+    foreach ($db['videos'] as $video) {
+        if ($video['id'] === $id) {
+            $exists = true;
+            break;
+        }
+    }
     
-    saveDatabase($db);
+    if (!$exists) {
+        $db['videos'][] = [
+            'id' => $id,
+            'title' => $title,
+            'filename' => $downloadedFile,
+            'type' => $ext === 'mp3' ? 'audio' : 'video',
+            'format' => $ext,
+            'size' => file_exists($filepath) ? filesize($filepath) : 0,
+            'created_at' => date('c')
+        ];
+        saveDatabase($db);
+    }
 } else {
     saveProgress([
         'percent' => 0,
@@ -168,6 +237,12 @@ if ($downloadedFile && $exitCode === 0) {
         'title' => 'Download failed: ' . $title,
         'id' => $id
     ]);
+    
+    // Clean up any partial files on error
+    $files = glob(VIDEOS_DIR . '/' . $id . '_*');
+    foreach ($files as $file) {
+        @unlink($file);
+    }
 }
 
 // Clear current and process next in queue
@@ -175,7 +250,8 @@ $queue = getQueue();
 $queue['current'] = null;
 saveQueue($queue);
 
+// Small delay to let the UI see the completion status
+usleep(500000); // 0.5 seconds
+
 // Check if there are more items in queue
-if (!empty($queue['queue'])) {
-    processQueue();
-}
+processNextInQueue();
