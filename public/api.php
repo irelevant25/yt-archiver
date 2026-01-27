@@ -20,6 +20,7 @@ define('VIDEOS_DIR', DATA_DIR . '/videos');
 define('DB_FILE', DATA_DIR . '/database.json');
 define('QUEUE_FILE', DATA_DIR . '/queue.json');
 define('PROGRESS_FILE', DATA_DIR . '/progress.json');
+define('PID_FILE', DATA_DIR . '/download.pid');
 
 // Ensure directories exist
 if (!file_exists(VIDEOS_DIR)) {
@@ -43,7 +44,7 @@ function getDatabase(): array {
 }
 
 function saveDatabase(array $db): void {
-    file_put_contents(DB_FILE, json_encode($db, JSON_PRETTY_PRINT));
+    file_put_contents(DB_FILE, json_encode($db, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 function getQueue(): array {
@@ -52,19 +53,23 @@ function getQueue(): array {
 }
 
 function saveQueue(array $queue): void {
-    file_put_contents(QUEUE_FILE, json_encode($queue, JSON_PRETTY_PRINT));
+    file_put_contents(QUEUE_FILE, json_encode($queue, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE));
 }
 
 function getProgress(): array {
     if (!file_exists(PROGRESS_FILE)) {
-        return ['percent' => 0, 'status' => 'idle', 'title' => ''];
+        return ['percent' => 0, 'status' => 'idle', 'title' => '', 'id' => null];
     }
     $content = file_get_contents(PROGRESS_FILE);
-    return json_decode($content, true) ?: ['percent' => 0, 'status' => 'idle', 'title' => ''];
+    return json_decode($content, true) ?: ['percent' => 0, 'status' => 'idle', 'title' => '', 'id' => null];
 }
 
 function saveProgress(array $progress): void {
     file_put_contents(PROGRESS_FILE, json_encode($progress));
+}
+
+function clearProgress(): void {
+    saveProgress(['percent' => 0, 'status' => 'idle', 'title' => '', 'id' => null]);
 }
 
 function generateId(): string {
@@ -142,15 +147,86 @@ function processQueue(): void {
     $queue['current'] = $item;
     saveQueue($queue);
     
+    // Reset progress for new download
+    saveProgress([
+        'percent' => 0,
+        'status' => 'starting',
+        'title' => 'Fetching video info...',
+        'id' => $item['id']
+    ]);
+    
     // Start download in background
     $cmd = sprintf(
-        'php %s/download_worker.php %s %s %s > /dev/null 2>&1 &',
+        'php %s/download_worker.php %s %s %s > /dev/null 2>&1 & echo $!',
         __DIR__,
         escapeshellarg($item['id']),
         escapeshellarg($item['url']),
         escapeshellarg($item['format'])
     );
-    exec($cmd);
+    $pid = trim(shell_exec($cmd));
+    
+    // Save PID for potential cancellation
+    if ($pid) {
+        file_put_contents(PID_FILE, $pid);
+    }
+}
+
+function cancelDownload(string $id): array {
+    $queue = getQueue();
+    
+    // Check if it's the current download
+    if ($queue['current'] !== null && $queue['current']['id'] === $id) {
+        // Kill the download process
+        if (file_exists(PID_FILE)) {
+            $pid = trim(file_get_contents(PID_FILE));
+            if ($pid) {
+                // Kill the worker and any child processes (yt-dlp)
+                shell_exec("pkill -P $pid 2>/dev/null");
+                shell_exec("kill $pid 2>/dev/null");
+            }
+            unlink(PID_FILE);
+        }
+        
+        // Clean up any partial files
+        $files = glob(VIDEOS_DIR . '/' . $id . '_*');
+        foreach ($files as $file) {
+            unlink($file);
+        }
+        
+        // Also clean up .part files
+        $partFiles = glob(VIDEOS_DIR . '/*.part');
+        foreach ($partFiles as $file) {
+            unlink($file);
+        }
+        
+        // Clear current and progress
+        $queue['current'] = null;
+        saveQueue($queue);
+        clearProgress();
+        
+        // Process next in queue
+        processQueue();
+        
+        return ['success' => true, 'message' => 'Download cancelled'];
+    }
+    
+    // Check if it's in the queue
+    $found = false;
+    $queue['queue'] = array_filter($queue['queue'], function($item) use ($id, &$found) {
+        if ($item['id'] === $id) {
+            $found = true;
+            return false;
+        }
+        return true;
+    });
+    $queue['queue'] = array_values($queue['queue']); // Re-index array
+    
+    if ($found) {
+        saveQueue($queue);
+        return ['success' => true, 'message' => 'Removed from queue'];
+    }
+    
+    return ['success' => false, 'message' => 'Download not found'];
 }
 
 function getVideos(): array {
@@ -160,9 +236,17 @@ function getVideos(): array {
 
 function deleteVideo(string $id): array {
     $db = getDatabase();
-    $index = array_search($id, array_column($db['videos'], 'id'));
+    $index = null;
     
-    if ($index === false) {
+    // Find the video by id
+    foreach ($db['videos'] as $i => $video) {
+        if ($video['id'] === $id) {
+            $index = $i;
+            break;
+        }
+    }
+    
+    if ($index === null) {
         return ['success' => false, 'message' => 'Video not found'];
     }
     
@@ -182,6 +266,11 @@ function deleteVideo(string $id): array {
 function getDownloadStatus(): array {
     $queue = getQueue();
     $progress = getProgress();
+    
+    // Only return progress if it matches current download
+    if ($queue['current'] === null || $progress['id'] !== $queue['current']['id']) {
+        $progress = ['percent' => 0, 'status' => 'idle', 'title' => '', 'id' => null];
+    }
     
     return [
         'current' => $queue['current'],
@@ -227,6 +316,20 @@ try {
             }
             
             echo json_encode(startDownload($url, $format));
+            break;
+            
+        case 'cancel':
+            if ($method !== 'POST') {
+                throw new Exception('Method not allowed');
+            }
+            $input = json_decode(file_get_contents('php://input'), true);
+            $id = $input['id'] ?? '';
+            
+            if (empty($id)) {
+                throw new Exception('Download ID is required');
+            }
+            
+            echo json_encode(cancelDownload($id));
             break;
             
         case 'status':
