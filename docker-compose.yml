@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  yt-archiver:
+    image: ghcr.io/irelevant25/yt-archiver:latest
+    container_name: yt-archiver
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      # Change this path to where you want to store your downloaded videos
+      # Example paths:
+      # - /mnt/media/youtube:/data/videos        # For a media server
+      # - /home/user/Videos/youtube:/data/videos # For home directory
+      # - ./videos:/data/videos                   # For local folder
+      - /opt/yt-archiver/videos:/data/videos
+      
+      # Persistent database storage
+      - /opt/yt-archiver/data:/data
+    environment:
+      - TZ=UTC
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
