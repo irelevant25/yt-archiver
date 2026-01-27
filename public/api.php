@@ -253,12 +253,16 @@ try {
         case 'serve':
             $filename = $_GET['file'] ?? '';
             if (empty($filename)) {
-                throw new Exception('Filename is required');
+                http_response_code(400);
+                echo json_encode(['error' => 'Filename is required']);
+                exit;
             }
             
             $filepath = VIDEOS_DIR . '/' . basename($filename);
             if (!file_exists($filepath)) {
-                throw new Exception('File not found');
+                http_response_code(404);
+                echo json_encode(['error' => 'File not found']);
+                exit;
             }
             
             $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
@@ -269,10 +273,31 @@ try {
                 'm4a' => 'audio/mp4'
             ];
             
+            // Clear any previous output
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+            
+            // Send proper headers for file download
+            header('Content-Description: File Transfer');
             header('Content-Type: ' . ($mimeTypes[$ext] ?? 'application/octet-stream'));
             header('Content-Disposition: attachment; filename="' . basename($filename) . '"');
+            header('Content-Transfer-Encoding: binary');
+            header('Expires: 0');
+            header('Cache-Control: must-revalidate');
+            header('Pragma: public');
             header('Content-Length: ' . filesize($filepath));
-            readfile($filepath);
+            
+            // Flush headers
+            flush();
+            
+            // Read file in chunks to handle large files
+            $handle = fopen($filepath, 'rb');
+            while (!feof($handle)) {
+                echo fread($handle, 8192);
+                flush();
+            }
+            fclose($handle);
             exit;
             
         default:
