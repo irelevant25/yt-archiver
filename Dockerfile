@@ -10,7 +10,11 @@ RUN apk add --no-cache \
     curl \
     bash \
     procps \
+    sudo \
     && pip3 install --break-system-packages yt-dlp
+
+# Allow www-data to run pip without password
+RUN echo "www-data ALL=(ALL) NOPASSWD: /usr/bin/pip3, /usr/bin/pip" >> /etc/sudoers
 
 # Configure PHP
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
