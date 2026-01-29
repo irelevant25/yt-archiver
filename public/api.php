@@ -314,6 +314,20 @@ try {
             if (empty($url)) {
                 throw new Exception('URL is required');
             }
+
+            $allowedHosts = ['https://www.youtube.com/watch?v=', 'https://youtu.be/'];
+            $isValid = false;
+            
+            foreach ($allowedHosts as $host) {
+                if (str_starts_with($url, $host) || str_starts_with($url, $host)) {
+                    $isValid = true;
+                    break;
+                }
+            }
+            
+            if (!$isValid) {
+                throw new Exception("Invalid source");
+            }
             
             echo json_encode(startDownload($url, $format));
             break;
