@@ -103,7 +103,7 @@ function getLatestYtDlpVersion(): array {
 }
 
 function updateYtDlp(): array {
-    $output = shell_exec('pip install --upgrade yt-dlp 2>&1');
+    $output = shell_exec('pip install --upgrade yt-dlp --break-system-packages 2>&1');
     $newVersion = getYtDlpVersion();
     return [
         'success' => true,
