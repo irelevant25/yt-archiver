@@ -315,7 +315,7 @@ try {
                 throw new Exception('URL is required');
             }
 
-            $allowedHosts = ['https://www.youtube.com/watch?v=', 'https://youtu.be/'];
+            $allowedHosts = ['https://www.youtube.com/watch?v=', 'https://youtu.be/', 'https://music.youtube.com/watch?v='];
             $isValid = false;
             
             foreach ($allowedHosts as $host) {
