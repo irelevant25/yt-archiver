@@ -6,12 +6,14 @@ let allLogs = [];
 let autoRefreshTimer = null;
 
 const ACTION_COLORS = {
-    download: 'action-download',
-    cancel:   'action-cancel',
-    update:   'action-update',
-    serve:    'action-serve',
-    process:  'action-process',
-    logs:     'action-logs',
+    download:   'action-download',
+    cancel:     'action-cancel',
+    update:     'action-update',
+    serve:      'action-serve',
+    file_serve: 'action-serve',
+    process:    'action-process',
+    logs:       'action-logs',
+    videos:     'action-cancel',
 };
 
 const METHOD_COLORS = {

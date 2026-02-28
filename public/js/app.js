@@ -372,6 +372,13 @@ async function cancelDownload(id) {
 
 // Download file - use direct link for better large file handling
 function downloadFile(filename) {
+    // Log the file download (fire-and-forget; nginx serves the file directly)
+    fetch(`${API_URL}?action=file_serve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename })
+    }).catch(() => {});
+
     const link = document.createElement('a');
     link.href = `/download/${encodeURIComponent(filename)}`;
     link.download = filename;

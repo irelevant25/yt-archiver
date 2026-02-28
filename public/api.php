@@ -292,8 +292,12 @@ function getClientIp(): string {
 }
 
 function logRequest(string $action, string $method, string $body): void {
-    $skip = ['version', 'videos', 'status', 'logs'];
-    if (in_array($action, $skip)) {
+    // Always skip these
+    if (in_array($action, ['version', 'status', 'logs'])) {
+        return;
+    }
+    // Skip videos only for GET (list); log DELETE (delete a video)
+    if ($action === 'videos' && $method === 'GET') {
         return;
     }
 
@@ -482,6 +486,12 @@ try {
             fclose($handle);
             exit;
             
+        case 'file_serve':
+            // Logging only — the actual file is served by nginx via /download/
+            // The frontend POSTs here before triggering the direct download link
+            echo json_encode(['success' => true]);
+            break;
+
         case 'logs':
             $allowedIp = getenv('LOGS_ALLOWED_IP');
             if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp) {
