@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Archiver — Logs</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/logs.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 3.993L9 16z"/></svg>
+                </div>
+                <div class="logo-text">
+                    <h1>YT Archiver</h1>
+                    <p>Request logs</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="nav-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                    <span>Home</span>
+                </a>
+                <button class="nav-btn" id="refreshBtn" onclick="loadLogs()">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                    <span>Refresh</span>
+                </button>
+                <label class="auto-refresh-toggle">
+                    <input type="checkbox" id="autoRefresh">
+                    <span class="toggle-track">
+                        <span class="toggle-thumb"></span>
+                    </span>
+                    <span>Auto-refresh</span>
+                </label>
+            </div>
+        </header>
+
+        <section class="logs-section">
+            <div class="logs-header">
+                <div class="logs-title-row">
+                    <h2 class="section-title">
+                        <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                        Request Logs
+                    </h2>
+                    <span class="log-count" id="logCount">0 entries</span>
+                </div>
+                <div class="logs-filters">
+                    <div class="filter-group">
+                        <input type="text" class="filter-input" id="searchFilter" placeholder="Search action or body...">
+                    </div>
+                    <div class="filter-group">
+                        <select class="filter-select" id="actionFilter">
+                            <option value="">All Actions</option>
+                            <option value="download">download</option>
+                            <option value="cancel">cancel</option>
+                            <option value="update">update</option>
+                            <option value="serve">serve</option>
+                            <option value="process">process</option>
+                            <option value="logs">logs</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <select class="filter-select" id="methodFilter">
+                            <option value="">All Methods</option>
+                            <option value="GET">GET</option>
+                            <option value="POST">POST</option>
+                            <option value="DELETE">DELETE</option>
+                        </select>
+                    </div>
+                    <button class="clear-btn" id="clearFiltersBtn" onclick="clearFilters()">Clear filters</button>
+                </div>
+            </div>
+
+            <div class="logs-table-wrap" id="logsContainer">
+                <div class="logs-empty">
+                    <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+                    <p>Loading logs...</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Body Modal -->
+    <div class="modal-overlay" id="bodyModal" onclick="closeBodyModal(event)">
+        <div class="modal body-modal">
+            <div class="modal-header">
+                <h3>Request Body</h3>
+                <button class="modal-close" onclick="closeBodyModal()">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+                </button>
+            </div>
+            <pre class="body-content" id="bodyContent"></pre>
+        </div>
+    </div>
+
+    <script src="/js/logs.js"></script>
+</body>
+</html>

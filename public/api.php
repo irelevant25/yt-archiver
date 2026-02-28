@@ -21,6 +21,7 @@ define('DB_FILE', DATA_DIR . '/database.json');
 define('QUEUE_FILE', DATA_DIR . '/queue.json');
 define('PROGRESS_FILE', DATA_DIR . '/progress.json');
 define('PID_FILE', DATA_DIR . '/download.pid');
+define('LOG_FILE', DATA_DIR . '/logs.csv');
 
 // Ensure directories exist
 if (!file_exists(VIDEOS_DIR)) {
@@ -279,9 +280,60 @@ function getDownloadStatus(): array {
     ];
 }
 
+function logRequest(string $action, string $method, string $body): void {
+    $skip = ['version', 'videos', 'status'];
+    if (in_array($action, $skip)) {
+        return;
+    }
+
+    $escape = fn(string $v): string => '"' . str_replace('"', '""', $v) . '"';
+
+    if (!file_exists(LOG_FILE)) {
+        file_put_contents(LOG_FILE, "\"timestamp\",\"action\",\"method\",\"body\"\n", LOCK_EX);
+    }
+
+    $line = implode(',', [
+        $escape(date('c')),
+        $escape($action),
+        $escape($method),
+        $escape($body),
+    ]) . "\n";
+
+    file_put_contents(LOG_FILE, $line, FILE_APPEND | LOCK_EX);
+}
+
+function getLogs(int $limit = 1000): array {
+    if (!file_exists(LOG_FILE)) {
+        return [];
+    }
+
+    $lines = file(LOG_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    array_shift($lines); // remove header
+
+    $logs = [];
+    foreach ($lines as $line) {
+        $parsed = str_getcsv($line);
+        if (count($parsed) >= 4) {
+            $logs[] = [
+                'timestamp' => $parsed[0],
+                'action'    => $parsed[1],
+                'method'    => $parsed[2],
+                'body'      => $parsed[3],
+            ];
+        }
+    }
+
+    return array_slice(array_reverse($logs), 0, $limit);
+}
+
 // Router
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
+
+// Log the incoming request (skip OPTIONS and excluded actions)
+if ($method !== 'OPTIONS') {
+    logRequest($action, $method, file_get_contents('php://input') ?: '');
+}
 
 try {
     switch ($action) {
@@ -417,6 +469,11 @@ try {
             fclose($handle);
             exit;
             
+        case 'logs':
+            $limit = min((int)($_GET['limit'] ?? 1000), 5000);
+            echo json_encode(['logs' => getLogs($limit)]);
+            break;
+
         default:
             echo json_encode(['error' => 'Unknown action']);
     }
