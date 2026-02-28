@@ -19,6 +19,10 @@ services:
       - /opt/yt-archiver/data:/data
     environment:
       - TZ=UTC
+      # Restrict the /api.php?action=logs endpoint to a single IP address.
+      # Only requests from this IP will receive log data; all others get 403.
+      # Set your IP below and uncomment the line in Portainer / your environment.
+      # - LOGS_ALLOWED_IP=
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s

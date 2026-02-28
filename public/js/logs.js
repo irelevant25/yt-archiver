@@ -144,6 +144,7 @@ function renderLogs() {
             <td class="ts-cell"><span class="ts-value">${escapeHtml(formatTimestamp(log.timestamp))}</span></td>
             <td><span class="badge ${actionClass}">${escapeHtml(log.action || '—')}</span></td>
             <td><span class="badge ${methodClass}">${escapeHtml(log.method)}</span></td>
+            <td class="ip-cell"><span class="ip-value">${escapeHtml(log.ip || '—')}</span></td>
             ${bodyCell}
         </tr>`;
     }).join('');
@@ -155,6 +156,7 @@ function renderLogs() {
                     <th class="th-ts">Timestamp</th>
                     <th class="th-action">Action</th>
                     <th class="th-method">Method</th>
+                    <th class="th-ip">IP</th>
                     <th class="th-body">Body</th>
                 </tr>
             </thead>

@@ -280,8 +280,19 @@ function getDownloadStatus(): array {
     ];
 }
 
+function getClientIp(): string {
+    $headers = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
+    foreach ($headers as $header) {
+        if (!empty($_SERVER[$header])) {
+            // X-Forwarded-For can be a comma-separated list; take the first
+            return trim(explode(',', $_SERVER[$header])[0]);
+        }
+    }
+    return 'unknown';
+}
+
 function logRequest(string $action, string $method, string $body): void {
-    $skip = ['version', 'videos', 'status'];
+    $skip = ['version', 'videos', 'status', 'logs'];
     if (in_array($action, $skip)) {
         return;
     }
@@ -289,13 +300,14 @@ function logRequest(string $action, string $method, string $body): void {
     $escape = fn(string $v): string => '"' . str_replace('"', '""', $v) . '"';
 
     if (!file_exists(LOG_FILE)) {
-        file_put_contents(LOG_FILE, "\"timestamp\",\"action\",\"method\",\"body\"\n", LOCK_EX);
+        file_put_contents(LOG_FILE, "\"timestamp\",\"action\",\"method\",\"ip\",\"body\"\n", LOCK_EX);
     }
 
     $line = implode(',', [
         $escape(date('c')),
         $escape($action),
         $escape($method),
+        $escape(getClientIp()),
         $escape($body),
     ]) . "\n";
 
@@ -313,12 +325,13 @@ function getLogs(int $limit = 1000): array {
     $logs = [];
     foreach ($lines as $line) {
         $parsed = str_getcsv($line);
-        if (count($parsed) >= 4) {
+        if (count($parsed) >= 5) {
             $logs[] = [
                 'timestamp' => $parsed[0],
                 'action'    => $parsed[1],
                 'method'    => $parsed[2],
-                'body'      => $parsed[3],
+                'ip'        => $parsed[3],
+                'body'      => $parsed[4],
             ];
         }
     }
@@ -470,6 +483,12 @@ try {
             exit;
             
         case 'logs':
+            $allowedIp = getenv('LOGS_ALLOWED_IP');
+            if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp) {
+                http_response_code(403);
+                echo json_encode(['error' => 'Forbidden']);
+                exit;
+            }
             $limit = min((int)($_GET['limit'] ?? 1000), 5000);
             echo json_encode(['logs' => getLogs($limit)]);
             break;

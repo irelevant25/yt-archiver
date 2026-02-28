@@ -186,6 +186,7 @@
 .th-ts     { width: 200px; }
 .th-action { width: 130px; }
 .th-method { width: 90px;  }
+.th-ip     { width: 150px; }
 .th-body   { }
 
 .logs-table tbody tr {
@@ -212,6 +213,17 @@
 }
 
 .ts-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+/* IP cell */
+.ip-cell {
+    white-space: nowrap;
+}
+
+.ip-value {
     font-family: 'JetBrains Mono', monospace;
     font-size: 12px;
     color: var(--text-secondary);
