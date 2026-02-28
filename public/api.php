@@ -318,29 +318,78 @@ function logRequest(string $action, string $method, string $body): void {
     file_put_contents(LOG_FILE, $line, FILE_APPEND | LOCK_EX);
 }
 
-function getLogs(int $limit = 1000): array {
-    if (!file_exists(LOG_FILE)) {
-        return [];
+function checkLogsAuth(): void {
+    $allowedIp = getenv('LOGS_ALLOWED_IP');
+    if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Forbidden']);
+        exit;
     }
 
-    $lines = file(LOG_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-    array_shift($lines); // remove header
-
-    $logs = [];
-    foreach ($lines as $line) {
-        $parsed = str_getcsv($line);
-        if (count($parsed) >= 5) {
-            $logs[] = [
-                'timestamp' => $parsed[0],
-                'action'    => $parsed[1],
-                'method'    => $parsed[2],
-                'ip'        => $parsed[3],
-                'body'      => $parsed[4],
-            ];
+    $password = getenv('LOGS_PASSWORD');
+    if ($password !== false && $password !== '') {
+        $provided = $_SERVER['HTTP_X_LOGS_PASSWORD'] ?? '';
+        if ($provided !== $password) {
+            http_response_code(401);
+            echo json_encode(['error' => 'Unauthorized']);
+            exit;
         }
     }
+}
 
-    return array_slice(array_reverse($logs), 0, $limit);
+function getLogs(int $page, int $limit, string $filterAction = '', string $filterMethod = '', string $search = ''): array {
+    if (!file_exists(LOG_FILE)) {
+        return ['logs' => [], 'total' => 0, 'pages' => 0, 'page' => $page, 'limit' => $limit, 'size' => 0];
+    }
+
+    $size  = filesize(LOG_FILE);
+    $lines = file(LOG_FILE, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    array_shift($lines); // remove header
+    $lines = array_reverse($lines); // newest first
+
+    $all = [];
+    foreach ($lines as $line) {
+        $parsed = str_getcsv($line);
+        if (count($parsed) < 5) continue;
+
+        $entry = [
+            'timestamp' => $parsed[0],
+            'action'    => $parsed[1],
+            'method'    => $parsed[2],
+            'ip'        => $parsed[3],
+            'body'      => $parsed[4],
+        ];
+
+        if ($filterAction && $entry['action'] !== $filterAction) continue;
+        if ($filterMethod && $entry['method'] !== $filterMethod) continue;
+        if ($search !== '') {
+            $s = strtolower($search);
+            if (strpos(strtolower($entry['action']), $s) === false
+                && strpos(strtolower($entry['body']), $s) === false
+                && strpos(strtolower($entry['ip']), $s) === false) {
+                continue;
+            }
+        }
+
+        $all[] = $entry;
+    }
+
+    $total  = count($all);
+    $pages  = $limit > 0 ? (int)ceil($total / $limit) : 1;
+    $offset = ($page - 1) * $limit;
+
+    return [
+        'logs'  => array_slice($all, $offset, $limit),
+        'total' => $total,
+        'page'  => $page,
+        'limit' => $limit,
+        'pages' => $pages,
+        'size'  => $size,
+    ];
+}
+
+function clearLogs(): void {
+    file_put_contents(LOG_FILE, "\"timestamp\",\"action\",\"method\",\"ip\",\"body\"\n", LOCK_EX);
 }
 
 // Router
@@ -493,14 +542,18 @@ try {
             break;
 
         case 'logs':
-            $allowedIp = getenv('LOGS_ALLOWED_IP');
-            if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp) {
-                http_response_code(403);
-                echo json_encode(['error' => 'Forbidden']);
-                exit;
+            checkLogsAuth();
+            if ($method === 'DELETE') {
+                clearLogs();
+                echo json_encode(['success' => true]);
+            } else {
+                $page         = max(1, (int)($_GET['page']          ?? 1));
+                $limit        = min(max(1, (int)($_GET['limit']      ?? 50)), 500);
+                $filterAction = $_GET['filter_action'] ?? '';
+                $filterMethod = $_GET['filter_method'] ?? '';
+                $search       = $_GET['search']        ?? '';
+                echo json_encode(getLogs($page, $limit, $filterAction, $filterMethod, $search));
             }
-            $limit = min((int)($_GET['limit'] ?? 1000), 5000);
-            echo json_encode(['logs' => getLogs($limit)]);
             break;
 
         default:

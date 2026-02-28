@@ -385,6 +385,166 @@
     word-break: break-all;
     background: var(--bg-tertiary);
     margin: 0;
+    text-align: left;
+}
+
+/* ── Danger button ────────────────────────────────────── */
+.nav-btn.danger {
+    color: var(--accent);
+    border-color: rgba(255, 51, 102, 0.3);
+}
+
+.nav-btn.danger:hover {
+    background: rgba(255, 51, 102, 0.1);
+    border-color: var(--accent);
+}
+
+/* ── Log meta (count + size) ──────────────────────────── */
+.log-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.log-size {
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: 'JetBrains Mono', monospace;
+    background: var(--bg-tertiary);
+    padding: 3px 8px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+}
+
+/* ── Search group / limit group ───────────────────────── */
+.search-group { flex: 2; min-width: 200px; }
+.limit-group  { flex: 0 0 140px; min-width: 140px; }
+
+/* ── Pagination ───────────────────────────────────────── */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    padding: 16px 24px;
+    border-top: 1px solid var(--border);
+}
+
+.page-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.page-btn:hover:not(:disabled) {
+    background: var(--bg-hover);
+    border-color: var(--accent);
+}
+
+.page-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.page-btn svg {
+    width: 16px;
+    height: 16px;
+}
+
+.page-info {
+    font-size: 13px;
+    color: var(--text-secondary);
+    font-family: 'JetBrains Mono', monospace;
+    white-space: nowrap;
+}
+
+/* ── Password modal ───────────────────────────────────── */
+.password-modal {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 32px;
+    width: min(400px, 95vw);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    text-align: center;
+    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+}
+
+.password-modal h3 {
+    font-size: 20px;
+    font-weight: 700;
+}
+
+.password-modal p {
+    font-size: 14px;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+}
+
+#passwordForm {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 8px;
+}
+
+.password-input {
+    width: 100%;
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.password-input:focus {
+    border-color: var(--accent);
+}
+
+.password-error {
+    font-size: 13px;
+    color: var(--accent);
+    text-align: left;
+}
+
+.password-submit {
+    padding: 12px;
+    background: var(--gradient-1);
+    border: none;
+    border-radius: var(--radius-sm);
+    color: white;
+    font-family: 'Outfit', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s;
+}
+
+.password-submit:hover {
+    opacity: 0.85;
+}
+
+/* ── Modal icon variant ───────────────────────────────── */
+.modal-icon.danger svg {
+    fill: var(--accent);
 }
 
 /* ── Responsive ───────────────────────────────────────── */
@@ -395,5 +555,8 @@
     .ts-value { font-size: 11px; }
     .logs-filters { flex-direction: column; }
     .filter-group { min-width: unset; width: 100%; }
+    .search-group, .limit-group { flex: unset; min-width: unset; }
     .header-actions { gap: 8px; }
+    .pagination { gap: 10px; padding: 12px 16px; }
+    .page-btn { padding: 7px 12px; font-size: 13px; }
 }

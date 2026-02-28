@@ -23,6 +23,9 @@ services:
       # Only requests from this IP will receive log data; all others get 403.
       # Set your IP below and uncomment the line in Portainer / your environment.
       # - LOGS_ALLOWED_IP=
+      # Password required in X-Logs-Password header to access the logs endpoint.
+      # When set, all requests without the correct password receive 401.
+      # - LOGS_PASSWORD=
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s

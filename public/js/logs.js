@@ -2,7 +2,9 @@
  * YT Archiver — Logs Page
  */
 
-let allLogs = [];
+// ── State ──────────────────────────────────────────────
+let currentPage  = 1;
+let totalPages   = 1;
 let autoRefreshTimer = null;
 
 const ACTION_COLORS = {
@@ -22,119 +24,135 @@ const METHOD_COLORS = {
     DELETE: 'method-delete',
 };
 
+// ── Password ───────────────────────────────────────────
+function getPassword() {
+    return sessionStorage.getItem('logs_password') || '';
+}
+
+function setPassword(pw) {
+    sessionStorage.setItem('logs_password', pw);
+}
+
+function authHeaders() {
+    const pw = getPassword();
+    return pw ? { 'X-Logs-Password': pw } : {};
+}
+
+function showPasswordModal(wrongPassword = false) {
+    document.getElementById('passwordError').style.display = wrongPassword ? 'block' : 'none';
+    document.getElementById('passwordInput').value = '';
+    document.getElementById('passwordModal').classList.add('active');
+    setTimeout(() => document.getElementById('passwordInput').focus(), 50);
+}
+
+function hidePasswordModal() {
+    document.getElementById('passwordModal').classList.remove('active');
+}
+
+async function submitPassword(e) {
+    e.preventDefault();
+    const pw = document.getElementById('passwordInput').value;
+    setPassword(pw);
+    hidePasswordModal();
+    await loadLogs();
+}
+
+// ── API ────────────────────────────────────────────────
+function buildUrl() {
+    const params = new URLSearchParams({
+        action: 'logs',
+        page:   currentPage,
+        limit:  document.getElementById('limitSelect').value,
+    });
+    const search       = document.getElementById('searchFilter').value.trim();
+    const filterAction = document.getElementById('actionFilter').value;
+    const filterMethod = document.getElementById('methodFilter').value;
+    if (search)       params.set('search',        search);
+    if (filterAction) params.set('filter_action', filterAction);
+    if (filterMethod) params.set('filter_method', filterMethod);
+    return `/api.php?${params}`;
+}
+
 async function loadLogs() {
     const btn = document.getElementById('refreshBtn');
     btn.classList.add('spinning');
 
     try {
-        const res = await fetch('/api.php?action=logs&limit=1000');
+        const res = await fetch(buildUrl(), { headers: authHeaders() });
+
+        if (res.status === 401) {
+            showPasswordModal(getPassword() !== '');
+            return;
+        }
+
+        if (res.status === 403) {
+            showError('Access denied — your IP address is not allowed to view logs.');
+            return;
+        }
+
         const data = await res.json();
-        allLogs = data.logs || [];
-        renderLogs();
+        if (data.error) {
+            showError(data.error);
+            return;
+        }
+
+        hidePasswordModal();
+        renderLogs(data);
     } catch (err) {
         console.error('Failed to load logs:', err);
-        document.getElementById('logsContainer').innerHTML = `
-            <div class="logs-empty error">
-                <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
-                <p>Failed to load logs. Check the API.</p>
-            </div>`;
+        showError('Failed to load logs. Check the API.');
     } finally {
         btn.classList.remove('spinning');
     }
 }
 
-function getFilters() {
-    return {
-        search: document.getElementById('searchFilter').value.toLowerCase().trim(),
-        action: document.getElementById('actionFilter').value,
-        method: document.getElementById('methodFilter').value,
-    };
+// ── Render ─────────────────────────────────────────────
+function formatBytes(bytes) {
+    if (!bytes) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(1024));
+    return (bytes / Math.pow(1024, i)).toFixed(1) + ' ' + units[i];
 }
 
-function filterLogs(logs) {
-    const { search, action, method } = getFilters();
-    return logs.filter(log => {
-        if (action && log.action !== action) return false;
-        if (method && log.method !== method) return false;
-        if (search && !log.action.toLowerCase().includes(search) && !log.body.toLowerCase().includes(search)) return false;
-        return true;
-    });
-}
+function renderLogs(data) {
+    const { logs, total, page, pages, size } = data;
+    currentPage = page;
+    totalPages  = pages;
 
-function formatTimestamp(ts) {
-    try {
-        const d = new Date(ts);
-        return d.toLocaleString(undefined, {
-            year: 'numeric', month: 'short', day: '2-digit',
-            hour: '2-digit', minute: '2-digit', second: '2-digit',
-            hour12: false,
-        });
-    } catch {
-        return ts;
-    }
-}
-
-function formatBody(raw) {
-    if (!raw || raw === '') return '<span class="body-empty">—</span>';
-    try {
-        const parsed = JSON.parse(raw);
-        const pretty = JSON.stringify(parsed, null, 2);
-        // Truncate for table cell
-        const short = pretty.length > 80 ? pretty.slice(0, 77) + '…' : pretty;
-        return `<span class="body-preview" title="Click to expand">${escapeHtml(short)}</span>`;
-    } catch {
-        const short = raw.length > 80 ? raw.slice(0, 77) + '…' : raw;
-        return `<span class="body-preview">${escapeHtml(short)}</span>`;
-    }
-}
-
-function escapeHtml(str) {
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
-}
-
-function openBodyModal(raw) {
-    if (!raw || raw === '') return;
-    let display;
-    try {
-        display = JSON.stringify(JSON.parse(raw), null, 2);
-    } catch {
-        display = raw;
-    }
-    document.getElementById('bodyContent').textContent = display;
-    document.getElementById('bodyModal').classList.add('active');
-}
-
-function closeBodyModal(event) {
-    if (event && event.target !== document.getElementById('bodyModal')) return;
-    document.getElementById('bodyModal').classList.remove('active');
-    document.getElementById('bodyContent').textContent = '';
-}
-
-function renderLogs() {
-    const filtered = filterLogs(allLogs);
-    const container = document.getElementById('logsContainer');
+    // Meta
     const countEl = document.getElementById('logCount');
-    const total = allLogs.length;
-    const shown = filtered.length;
+    const sizeEl  = document.getElementById('logSize');
+    countEl.textContent = `${total} ${total === 1 ? 'entry' : 'entries'}`;
+    sizeEl.textContent  = formatBytes(size);
 
-    countEl.textContent = shown === total
-        ? `${total} ${total === 1 ? 'entry' : 'entries'}`
-        : `${shown} of ${total} entries`;
+    // Pagination
+    const pagination = document.getElementById('pagination');
+    const pageInfo   = document.getElementById('pageInfo');
+    const prevBtn    = document.getElementById('prevBtn');
+    const nextBtn    = document.getElementById('nextBtn');
 
-    if (filtered.length === 0) {
+    if (pages > 1) {
+        pagination.style.display = '';
+        pageInfo.textContent     = `Page ${page} of ${pages}`;
+        prevBtn.disabled         = page <= 1;
+        nextBtn.disabled         = page >= pages;
+    } else {
+        pagination.style.display = 'none';
+    }
+
+    // Table
+    const container = document.getElementById('logsContainer');
+
+    if (logs.length === 0) {
         container.innerHTML = `
             <div class="logs-empty">
                 <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-                <p>${allLogs.length === 0 ? 'No log entries yet.' : 'No entries match the current filters.'}</p>
+                <p>${total === 0 ? 'No log entries yet.' : 'No entries match the current filters.'}</p>
             </div>`;
         return;
     }
 
-    const rows = filtered.map((log, i) => {
+    const rows = logs.map((log, i) => {
         const actionClass = ACTION_COLORS[log.action] || 'action-default';
         const methodClass = METHOD_COLORS[log.method] || 'method-get';
         const hasBody = log.body && log.body !== '';
@@ -165,23 +183,90 @@ function renderLogs() {
             <tbody>${rows}</tbody>
         </table>`;
 
-    // Attach click handlers for body cells
+    // Body click handlers
     container.querySelectorAll('.body-cell.clickable').forEach(cell => {
         cell.addEventListener('click', () => {
-            const log = filtered[parseInt(cell.dataset.idx)];
-            openBodyModal(log.body);
+            openBodyModal(logs[parseInt(cell.dataset.idx)].body);
         });
     });
 }
 
-function clearFilters() {
-    document.getElementById('searchFilter').value = '';
-    document.getElementById('actionFilter').value = '';
-    document.getElementById('methodFilter').value = '';
-    renderLogs();
+function showError(msg) {
+    document.getElementById('logsContainer').innerHTML = `
+        <div class="logs-empty error">
+            <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z"/></svg>
+            <p>${escapeHtml(msg)}</p>
+        </div>`;
 }
 
-// Auto-refresh
+// ── Pagination ─────────────────────────────────────────
+function goToPage(page) {
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    loadLogs();
+}
+
+// ── Filters ────────────────────────────────────────────
+function clearFilters() {
+    document.getElementById('searchFilter').value  = '';
+    document.getElementById('actionFilter').value  = '';
+    document.getElementById('methodFilter').value  = '';
+    currentPage = 1;
+    loadLogs();
+}
+
+// All filter/limit changes reset to page 1 and reload
+let searchDebounce = null;
+document.getElementById('searchFilter').addEventListener('input', () => {
+    clearTimeout(searchDebounce);
+    searchDebounce = setTimeout(() => { currentPage = 1; loadLogs(); }, 400);
+});
+
+['actionFilter', 'methodFilter', 'limitSelect'].forEach(id => {
+    document.getElementById(id).addEventListener('change', () => { currentPage = 1; loadLogs(); });
+});
+
+// ── Body Modal ─────────────────────────────────────────
+function openBodyModal(raw) {
+    if (!raw || raw === '') return;
+    let display;
+    try { display = JSON.stringify(JSON.parse(raw), null, 2); }
+    catch { display = raw; }
+    document.getElementById('bodyContent').textContent = display;
+    document.getElementById('bodyModal').classList.add('active');
+}
+
+function closeBodyModal(event) {
+    if (event && event.target !== document.getElementById('bodyModal')) return;
+    document.getElementById('bodyModal').classList.remove('active');
+    document.getElementById('bodyContent').textContent = '';
+}
+
+// ── Clear Logs ─────────────────────────────────────────
+function confirmClearLogs() {
+    document.getElementById('clearModal').classList.add('active');
+}
+
+function closeClearModal() {
+    document.getElementById('clearModal').classList.remove('active');
+}
+
+async function clearLogs() {
+    closeClearModal();
+    try {
+        const res = await fetch('/api.php?action=logs', {
+            method: 'DELETE',
+            headers: authHeaders(),
+        });
+        if (res.status === 401) { showPasswordModal(true); return; }
+        currentPage = 1;
+        await loadLogs();
+    } catch (err) {
+        console.error('Failed to clear logs:', err);
+    }
+}
+
+// ── Auto-refresh ───────────────────────────────────────
 document.getElementById('autoRefresh').addEventListener('change', function () {
     if (this.checked) {
         autoRefreshTimer = setInterval(loadLogs, 5000);
@@ -191,16 +276,47 @@ document.getElementById('autoRefresh').addEventListener('change', function () {
     }
 });
 
-// Filter listeners — live re-render (no network call)
-['searchFilter', 'actionFilter', 'methodFilter'].forEach(id => {
-    document.getElementById(id).addEventListener('input', renderLogs);
-    document.getElementById(id).addEventListener('change', renderLogs);
-});
+// ── Helpers ────────────────────────────────────────────
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
 
-// Close body modal on Escape
+function formatTimestamp(ts) {
+    try {
+        return new Date(ts).toLocaleString(undefined, {
+            year: 'numeric', month: 'short', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit',
+            hour12: false,
+        });
+    } catch { return ts; }
+}
+
+function formatBody(raw) {
+    if (!raw || raw === '') return '<span class="body-empty">—</span>';
+    try {
+        const pretty = JSON.stringify(JSON.parse(raw), null, 2);
+        const short  = pretty.length > 80 ? pretty.slice(0, 77) + '…' : pretty;
+        return `<span class="body-preview" title="Click to expand">${escapeHtml(short)}</span>`;
+    } catch {
+        const short = raw.length > 80 ? raw.slice(0, 77) + '…' : raw;
+        return `<span class="body-preview">${escapeHtml(short)}</span>`;
+    }
+}
+
+// ── Keyboard ───────────────────────────────────────────
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') document.getElementById('bodyModal').classList.remove('active');
+    if (e.key === 'Escape') {
+        document.getElementById('bodyModal').classList.remove('active');
+        closeClearModal();
+    }
 });
 
-// Initial load
+// ── Init ───────────────────────────────────────────────
+// If we have no password stored, show the modal upfront only if the API demands it.
+// We attempt the load and let the 401 handler show the modal if needed.
+hidePasswordModal();
 loadLogs();

@@ -31,6 +31,10 @@
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
                     <span>Refresh</span>
                 </button>
+                <button class="nav-btn danger" id="clearLogsBtn" onclick="confirmClearLogs()">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+                    <span>Clear Logs</span>
+                </button>
                 <label class="auto-refresh-toggle">
                     <input type="checkbox" id="autoRefresh">
                     <span class="toggle-track">
@@ -48,11 +52,14 @@
                         <svg viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
                         Request Logs
                     </h2>
-                    <span class="log-count" id="logCount">0 entries</span>
+                    <div class="log-meta">
+                        <span class="log-count" id="logCount">—</span>
+                        <span class="log-size" id="logSize"></span>
+                    </div>
                 </div>
                 <div class="logs-filters">
-                    <div class="filter-group">
-                        <input type="text" class="filter-input" id="searchFilter" placeholder="Search action or body...">
+                    <div class="filter-group search-group">
+                        <input type="text" class="filter-input" id="searchFilter" placeholder="Search action, IP or body...">
                     </div>
                     <div class="filter-group">
                         <select class="filter-select" id="actionFilter">
@@ -64,7 +71,6 @@
                             <option value="file_serve">file_serve</option>
                             <option value="videos">videos (DELETE)</option>
                             <option value="process">process</option>
-                            <option value="logs">logs</option>
                         </select>
                     </div>
                     <div class="filter-group">
@@ -75,7 +81,15 @@
                             <option value="DELETE">DELETE</option>
                         </select>
                     </div>
-                    <button class="clear-btn" id="clearFiltersBtn" onclick="clearFilters()">Clear filters</button>
+                    <div class="filter-group limit-group">
+                        <select class="filter-select" id="limitSelect">
+                            <option value="25">25 / page</option>
+                            <option value="50" selected>50 / page</option>
+                            <option value="100">100 / page</option>
+                            <option value="250">250 / page</option>
+                        </select>
+                    </div>
+                    <button class="clear-btn" onclick="clearFilters()">Clear filters</button>
                 </div>
             </div>
 
@@ -85,7 +99,35 @@
                     <p>Loading logs...</p>
                 </div>
             </div>
+
+            <div class="pagination" id="pagination" style="display:none">
+                <button class="page-btn" id="prevBtn" onclick="goToPage(currentPage - 1)">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                    Prev
+                </button>
+                <span class="page-info" id="pageInfo">Page 1 of 1</span>
+                <button class="page-btn" id="nextBtn" onclick="goToPage(currentPage + 1)">
+                    Next
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                </button>
+            </div>
         </section>
+    </div>
+
+    <!-- Password Modal -->
+    <div class="modal-overlay active" id="passwordModal">
+        <div class="modal password-modal">
+            <div class="modal-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+            </div>
+            <h3>Password required</h3>
+            <p>Enter the logs access password.</p>
+            <form id="passwordForm" onsubmit="submitPassword(event)">
+                <input type="password" class="password-input" id="passwordInput" placeholder="Password" autocomplete="current-password">
+                <div id="passwordError" class="password-error" style="display:none">Incorrect password</div>
+                <button type="submit" class="password-submit">Unlock</button>
+            </form>
+        </div>
     </div>
 
     <!-- Body Modal -->
@@ -98,6 +140,21 @@
                 </button>
             </div>
             <pre class="body-content" id="bodyContent"></pre>
+        </div>
+    </div>
+
+    <!-- Clear Logs Confirm Modal -->
+    <div class="modal-overlay" id="clearModal">
+        <div class="modal">
+            <div class="modal-icon danger">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
+            </div>
+            <h3>Clear all logs?</h3>
+            <p>This will permanently delete all log entries. The file will be reset to an empty state.</p>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" onclick="closeClearModal()">Cancel</button>
+                <button class="modal-btn confirm" onclick="clearLogs()">Clear</button>
+            </div>
         </div>
     </div>
 
