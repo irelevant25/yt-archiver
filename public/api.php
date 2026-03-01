@@ -318,9 +318,16 @@ function logRequest(string $action, string $method, string $body): void {
     file_put_contents(LOG_FILE, $line, FILE_APPEND | LOCK_EX);
 }
 
+function isPrivateIp(): bool {
+    $ip = getClientIp();
+    return filter_var($ip, FILTER_VALIDATE_IP, 
+        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
+    ) === false;
+}
+
 function checkLogsAuth(): void {
     $allowedIp = getenv('LOGS_ALLOWED_IP');
-    if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp) {
+    if ($allowedIp !== false && $allowedIp !== '' && (getClientIp() !== $allowedIp || !isPrivateIp())) {
         http_response_code(403);
         echo json_encode(['error' => 'Forbidden']);
         exit;
