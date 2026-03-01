@@ -281,6 +281,9 @@ function getDownloadStatus(): array {
 }
 
 function getClientIp(): string {
+    echo $_SERVER['HTTP_X_FORWARDED_FOR'] ?? 'not set';
+    echo $_SERVER['HTTP_CF_CONNECTING_IP'] ?? 'not set';
+    echo $_SERVER['REMOTE_ADDR'] ?? 'not set';
     $headers = ['HTTP_X_FORWARDED_FOR', 'HTTP_X_REAL_IP', 'REMOTE_ADDR'];
     foreach ($headers as $header) {
         if (!empty($_SERVER[$header])) {
