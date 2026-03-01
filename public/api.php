@@ -327,7 +327,7 @@ function isPrivateIp(): bool {
 
 function checkLogsAuth(): void {
     $allowedIp = getenv('LOGS_ALLOWED_IP');
-    if ($allowedIp !== false && $allowedIp !== '' && (getClientIp() !== $allowedIp || !isPrivateIp())) {
+    if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp && !isPrivateIp()) {
         http_response_code(403);
         echo json_encode(['error' => 'Forbidden']);
         exit;
