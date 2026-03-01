@@ -318,16 +318,30 @@ function logRequest(string $action, string $method, string $body): void {
     file_put_contents(LOG_FILE, $line, FILE_APPEND | LOCK_EX);
 }
 
-function isPrivateIp(): bool {
-    $ip = getClientIp();
-    return filter_var($ip, FILTER_VALIDATE_IP, 
-        FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE
-    ) === false;
+function isIpAllowed(string $clientIp, string $allowedIps): bool {
+    $entries = array_map('trim', explode(',', $allowedIps));
+    
+    foreach ($entries as $entry) {
+        // Exact match
+        if ($entry === $clientIp) {
+            return true;
+        }
+        
+        // Wildcard match: replace 'x' with regex wildcard
+        if (str_contains($entry, 'x')) {
+            $pattern = '/^' . str_replace('x', '\d{1,3}', preg_quote($entry, '/')) . '$/';
+            if (preg_match($pattern, $clientIp)) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
 }
 
 function checkLogsAuth(): void {
-    $allowedIp = getenv('LOGS_ALLOWED_IP');
-    if ($allowedIp !== false && $allowedIp !== '' && getClientIp() !== $allowedIp && !isPrivateIp()) {
+    $allowedIps = getenv('LOGS_ALLOWED_IP');
+    if ($allowedIps !== false && $allowedIps !== '' && !isIpAllowed(getClientIp(), $allowedIps)) {
         http_response_code(403);
         echo json_encode(['error' => 'Forbidden']);
         exit;
