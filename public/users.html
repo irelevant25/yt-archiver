@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YT Archiver — Users</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%23ff3366%27 d=%27M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 3.993L9 16z%27/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="stylesheet" href="/css/logs.css">
+    <link rel="stylesheet" href="/css/users.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="logo">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24"><path d="M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 3.993L9 16z"/></svg>
+                </div>
+                <div class="logo-text">
+                    <h1>YT Archiver</h1>
+                    <p>Users</p>
+                </div>
+            </div>
+            <div class="header-actions">
+                <a href="/" class="nav-btn">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+                    <span>Home</span>
+                </a>
+                <button class="nav-btn" id="refreshBtn">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+                    <span>Refresh</span>
+                </button>
+            </div>
+        </header>
+
+        <section class="logs-section">
+            <div class="logs-header">
+                <div class="logs-title-row">
+                    <h2 class="section-title">
+                        <svg viewBox="0 0 24 24"><path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
+                        Accounts
+                    </h2>
+                    <div class="log-meta">
+                        <span class="log-count" id="userCount">—</span>
+                    </div>
+                </div>
+                <p class="users-hint">Anyone can sign in with Google. New accounts stay <strong>pending</strong> and cannot download until you approve them. Disabled accounts cannot sign in; accounts are never deleted.</p>
+                <form class="add-user-form" id="addUserForm">
+                    <input type="email" class="filter-input" id="newUserEmail" placeholder="person@gmail.com" required autocomplete="off">
+                    <select class="filter-select" id="newUserRole">
+                        <option value="user">User</option>
+                        <option value="admin">Administrator</option>
+                    </select>
+                    <label class="add-user-approved">
+                        <input type="checkbox" id="newUserApproved" checked>
+                        <span>Approved</span>
+                    </label>
+                    <button type="submit" class="nav-btn">Add account</button>
+                </form>
+                <p class="users-hint">Add an account in advance: the first time that person signs in with Google using this email address, they get exactly this role and status, without waiting for approval.</p>
+            </div>
+
+            <div class="logs-table-wrap" id="usersContainer">
+                <div class="logs-empty"><p>Loading accounts...</p></div>
+            </div>
+        </section>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script src="/js/users.js"></script>
+</body>
+</html>

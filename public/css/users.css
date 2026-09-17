@@ -1,0 +1,111 @@
+/* Users page (reuses logs.css for the table layout) */
+
+.users-hint {
+    color: var(--text-secondary);
+    font-size: 14px;
+}
+
+.add-user-form {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    margin: 16px 0 6px;
+}
+
+.add-user-form .filter-input {
+    flex: 1;
+    min-width: 220px;
+}
+
+.add-user-approved {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+
+.add-user-approved input {
+    accent-color: var(--accent);
+}
+
+.user-cell-main .invited {
+    color: var(--warning);
+}
+
+.user-cell-main {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+}
+
+.user-cell-main .user-avatar {
+    width: 32px;
+    height: 32px;
+    font-size: 13px;
+}
+
+.user-cell-main strong {
+    display: block;
+    font-weight: 500;
+}
+
+.user-cell-main span {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+}
+
+.status-pending  { background: rgba(255, 170, 0, 0.15);  color: var(--warning); border: 1px solid rgba(255, 170, 0, 0.3); }
+.status-approved { background: rgba(0, 214, 143, 0.12);  color: var(--success); border: 1px solid rgba(0, 214, 143, 0.3); }
+.status-disabled { background: rgba(255, 51, 102, 0.12); color: var(--accent);  border: 1px solid rgba(255, 51, 102, 0.3); }
+.role-admin      { background: rgba(102, 126, 234, 0.15); color: #667eea; border: 1px solid rgba(102, 126, 234, 0.3); }
+.role-user       { background: rgba(150, 150, 170, 0.12); color: #9696aa; border: 1px solid rgba(150, 150, 170, 0.3); }
+
+.date-cell {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.user-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.user-actions button {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 12px;
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+.user-actions button:hover {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+}
+
+.user-actions button.primary {
+    border-color: var(--success);
+    color: var(--success);
+}
+
+.user-actions button.danger:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.user-actions .you {
+    font-size: 12px;
+    color: var(--text-muted);
+}

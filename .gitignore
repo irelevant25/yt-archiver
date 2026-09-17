@@ -1,0 +1,9 @@
+# Local Docker test data (see docs/knowledge-base/testing.md)
+.dev-data/
+
+# Personal Claude Code settings
+.claude/settings.local.json
+CLAUDE.local.md
+
+# yt-dlp/ffmpeg downloaded by dev/serve.php
+.dev-tools/

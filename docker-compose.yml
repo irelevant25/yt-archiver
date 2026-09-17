@@ -19,16 +19,32 @@ services:
       - /opt/yt-archiver/data:/data
     environment:
       - TZ=UTC
-      # Restrict the /api.php?action=logs endpoint to a single IP address.
-      # Only requests from this IP will receive log data; all others get 403.
-      # Set your IP below and uncomment the line in Portainer / your environment.
-      # - LOGS_ALLOWED_IP=
-      # Password required in X-Logs-Password header to access the logs endpoint.
-      # When set, all requests without the correct password receive 401.
-      # - LOGS_PASSWORD=
+      # Proxy headers (CF-Connecting-IP, X-Real-IP, X-Forwarded-For) are trusted only from private IPs.
+      # If a proxy reaches the container from a public IP (e.g. Cloudflare directly), list its IPs/CIDRs here.
+      # - TRUSTED_PROXIES=173.245.48.0/20,103.21.244.0/22
+      # Refuse downloads when less than this percentage of the video volume is (or would be) free. Default 10.
+      # - MIN_FREE_SPACE_PERCENT=10
+      # Ask for confirmation for downloads estimated at this size or more (GB). Default 1.
+      # - LARGE_DOWNLOAD_WARNING_GB=1
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
+    # Uncomment together with the postgres service below if you have no PostgreSQL server yet
+    # depends_on:
+    #   - postgres
+
+  # Sign-in needs a PostgreSQL database. Use an existing server, or uncomment this one and enter
+  # host "postgres", port 5432, database/user/password as below in /setup.php after the first start.
+  # postgres:
+  #   image: postgres:17-alpine
+  #   container_name: yt-archiver-postgres
+  #   restart: unless-stopped
+  #   environment:
+  #     - POSTGRES_DB=yt_archiver
+  #     - POSTGRES_USER=yt_archiver
+  #     - POSTGRES_PASSWORD=change-me
+  #   volumes:
+  #     - /opt/yt-archiver/postgres:/var/lib/postgresql/data

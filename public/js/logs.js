@@ -16,6 +16,9 @@ const ACTION_COLORS = {
     process:    'action-process',
     logs:       'action-logs',
     videos:     'action-cancel',
+    user:       'action-update',
+    create_user: 'action-update',
+    inspect:    'action-serve',
 };
 
 const METHOD_COLORS = {
@@ -23,39 +26,6 @@ const METHOD_COLORS = {
     POST:   'method-post',
     DELETE: 'method-delete',
 };
-
-// ── Password ───────────────────────────────────────────
-function getPassword() {
-    return sessionStorage.getItem('logs_password') || '';
-}
-
-function setPassword(pw) {
-    sessionStorage.setItem('logs_password', pw);
-}
-
-function authHeaders() {
-    const pw = getPassword();
-    return pw ? { 'X-Logs-Password': pw } : {};
-}
-
-function showPasswordModal(wrongPassword = false) {
-    document.getElementById('passwordError').style.display = wrongPassword ? 'block' : 'none';
-    document.getElementById('passwordInput').value = '';
-    document.getElementById('passwordModal').classList.add('active');
-    setTimeout(() => document.getElementById('passwordInput').focus(), 50);
-}
-
-function hidePasswordModal() {
-    document.getElementById('passwordModal').classList.remove('active');
-}
-
-async function submitPassword(e) {
-    e.preventDefault();
-    const pw = document.getElementById('passwordInput').value;
-    setPassword(pw);
-    hidePasswordModal();
-    await loadLogs();
-}
 
 // ── API ────────────────────────────────────────────────
 function buildUrl() {
@@ -78,25 +48,24 @@ async function loadLogs() {
     btn.classList.add('spinning');
 
     try {
-        const res = await fetch(buildUrl(), { headers: authHeaders() });
+        const res = await fetch(buildUrl());
+        const data = await res.json().catch(() => ({}));
 
         if (res.status === 401) {
-            showPasswordModal(getPassword() !== '');
+            window.location.href = '/login.php';
             return;
         }
 
         if (res.status === 403) {
-            showError('Access denied — your IP address is not allowed to view logs.');
+            showError('Access denied — only administrators can view logs.');
             return;
         }
 
-        const data = await res.json();
         if (data.error) {
             showError(data.error);
             return;
         }
 
-        hidePasswordModal();
         renderLogs(data);
     } catch (err) {
         console.error('Failed to load logs:', err);
@@ -165,6 +134,7 @@ function renderLogs(data) {
             <td><span class="badge ${actionClass}">${escapeHtml(log.action || '—')}</span></td>
             <td><span class="badge ${methodClass}">${escapeHtml(log.method)}</span></td>
             <td class="ip-cell"><span class="ip-value">${escapeHtml(log.ip || '—')}</span></td>
+            <td class="user-cell">${escapeHtml(log.user || '—')}</td>
             ${bodyCell}
         </tr>`;
     }).join('');
@@ -177,6 +147,7 @@ function renderLogs(data) {
                     <th class="th-action">Action</th>
                     <th class="th-method">Method</th>
                     <th class="th-ip">IP</th>
+                    <th class="th-user">User</th>
                     <th class="th-body">Body</th>
                 </tr>
             </thead>
@@ -254,11 +225,11 @@ function closeClearModal() {
 async function clearLogs() {
     closeClearModal();
     try {
-        const res = await fetch('/api.php?action=logs', {
-            method: 'DELETE',
-            headers: authHeaders(),
-        });
-        if (res.status === 401) { showPasswordModal(true); return; }
+        const res = await fetch('/api.php?action=logs', { method: 'DELETE' });
+        if (res.status === 401) {
+            window.location.href = '/login.php';
+            return;
+        }
         currentPage = 1;
         await loadLogs();
     } catch (err) {
@@ -316,7 +287,4 @@ document.addEventListener('keydown', e => {
 });
 
 // ── Init ───────────────────────────────────────────────
-// If we have no password stored, show the modal upfront only if the API demands it.
-// We attempt the load and let the 401 handler show the modal if needed.
-hidePasswordModal();
 loadLogs();

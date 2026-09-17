@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Cpath fill=%27%23ff3366%27 d=%27M19.615 3.184c-3.604-.246-11.631-.245-15.23 0C.488 3.45.029 5.804 0 12c.029 6.185.484 8.549 4.385 8.816 3.6.245 11.626.246 15.23 0C23.512 20.55 23.971 18.196 24 12c-.029-6.185-.484-8.549-4.385-8.816zM9 16V8l8 3.993L9 16z%27/%3E%3C/svg%3E">
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
@@ -35,17 +36,30 @@
                     <span>Update yt-dlp</span>
                 </button>
             </div>
+            <div class="user-panel" id="userPanel" hidden>
+                <span class="user-avatar" id="userAvatar"></span>
+                <div class="user-info">
+                    <span class="user-name" id="userName"></span>
+                    <span class="user-email" id="userEmail"></span>
+                </div>
+                <a href="/users.html" class="user-link" id="usersLink" hidden>Users <span class="pending-badge" id="pendingBadge" hidden></span></a>
+                <a href="/logs.html" class="user-link" id="logsLink" hidden>Logs</a>
+                <form method="post" action="/login.php?action=logout" class="logout-form">
+                    <input type="hidden" name="csrf" id="logoutCsrf">
+                    <button type="submit" class="user-link">Sign out</button>
+                </form>
+            </div>
         </header>
 
         <section class="download-section">
             <h2 class="section-title">
                 <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
-                Download Video
+                Download Video or Playlist
             </h2>
             <form class="download-form" id="downloadForm">
                 <div class="input-group">
                     <label for="urlInput">YouTube URL</label>
-                    <input type="text" id="urlInput" class="url-input" placeholder="https://www.youtube.com/watch?v=..." required>
+                    <input type="text" id="urlInput" class="url-input" placeholder="https://www.youtube.com/watch?v=... or /playlist?list=..." required>
                 </div>
                 <div class="input-group format-select">
                     <label>Format</label>
@@ -70,7 +84,21 @@
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
                     <span>Download</span>
                 </button>
+                <label class="playlist-toggle" id="playlistToggle" hidden>
+                    <input type="checkbox" id="playlistCheckbox">
+                    <span>Download the whole playlist (each item appears in the queue, the library gets one ZIP)</span>
+                </label>
             </form>
+
+            <div class="storage-panel" id="storagePanel" hidden>
+                <div class="storage-header">
+                    <span class="storage-label">Storage</span>
+                    <span class="storage-summary" id="storageSummary"></span>
+                </div>
+                <div class="storage-bar" id="storageBar"></div>
+                <div class="storage-legend" id="storageLegend"></div>
+                <div class="storage-blocked" id="storageBlocked" hidden></div>
+            </div>
         </section>
 
         <section class="queue-section">
@@ -98,6 +126,7 @@
                         <option value="">All Types</option>
                         <option value="video">Video (MP4)</option>
                         <option value="audio">Audio (MP3)</option>
+                        <option value="playlist">Playlist (ZIP)</option>
                     </select>
                 </div>
             </div>
@@ -125,11 +154,27 @@
             <div class="modal-icon">
                 <svg viewBox="0 0 24 24"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>
             </div>
-            <h3>Delete Video?</h3>
+            <h3>Delete from library?</h3>
             <p>This action cannot be undone. The file will be permanently removed.</p>
             <div class="modal-actions">
-                <button class="modal-btn cancel" onclick="closeDeleteModal()">Cancel</button>
+                <button class="modal-btn cancel" id="cancelDeleteBtn">Cancel</button>
                 <button class="modal-btn confirm" id="confirmDeleteBtn">Delete</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Large download confirmation -->
+    <div class="modal-overlay" id="confirmDownloadModal">
+        <div class="modal confirm-download-modal">
+            <div class="modal-icon warning">
+                <svg viewBox="0 0 24 24"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+            </div>
+            <h3>Download anyway?</h3>
+            <ul class="confirm-reasons" id="confirmReasons"></ul>
+            <dl class="confirm-details" id="confirmDetails"></dl>
+            <div class="modal-actions">
+                <button class="modal-btn cancel" id="cancelDownloadBtn">Cancel</button>
+                <button class="modal-btn confirm" id="confirmDownloadBtn">Download</button>
             </div>
         </div>
     </div>

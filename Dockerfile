@@ -11,10 +11,17 @@ RUN apk add --no-cache \
     bash \
     procps \
     sudo \
+    libzip \
+    libpq \
     && pip3 install --break-system-packages yt-dlp
 
-# Allow www-data to run pip without password
-RUN echo "www-data ALL=(ALL) NOPASSWD: /usr/bin/pip3, /usr/bin/pip" >> /etc/sudoers
+# PHP extensions: zip (ZipArchive) for playlist archives, pdo_pgsql for the user database
+RUN apk add --no-cache --virtual .ext-build-deps libzip-dev postgresql-dev \
+    && docker-php-ext-install zip pdo_pgsql \
+    && apk del .ext-build-deps
+
+# Allow www-data to run exactly the yt-dlp upgrade as root (must match updateYtDlp() in api.php)
+RUN echo "www-data ALL=(root) NOPASSWD: /usr/bin/pip3 install --upgrade yt-dlp --break-system-packages" >> /etc/sudoers
 
 # Configure PHP
 RUN mv "$PHP_INI_DIR/php.ini-production" "$PHP_INI_DIR/php.ini" \
@@ -27,6 +34,8 @@ RUN mkdir -p /var/www/html /data/videos /run/nginx
 # Copy application files
 COPY public/ /var/www/html/
 COPY nginx.conf /etc/nginx/http.d/default.conf
+# Fail the build if the config is invalid (e.g. auth_request not available)
+RUN nginx -t
 
 # Copy supervisor configuration
 COPY supervisord.conf /etc/supervisord.conf

@@ -187,7 +187,9 @@
 .th-action { width: 130px; }
 .th-method { width: 90px;  }
 .th-ip     { width: 150px; }
+.th-user   { width: 220px; }
 .th-body   { }
+.user-cell { font-size: 13px; color: var(--text-secondary); overflow-wrap: anywhere; }
 
 .logs-table tbody tr {
     border-bottom: 1px solid var(--border);
@@ -466,80 +468,6 @@
     color: var(--text-secondary);
     font-family: 'JetBrains Mono', monospace;
     white-space: nowrap;
-}
-
-/* ── Password modal ───────────────────────────────────── */
-.password-modal {
-    background: var(--bg-secondary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 40px 32px;
-    width: min(400px, 95vw);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    text-align: center;
-    box-shadow: 0 24px 80px rgba(0,0,0,0.6);
-}
-
-.password-modal h3 {
-    font-size: 20px;
-    font-weight: 700;
-}
-
-.password-modal p {
-    font-size: 14px;
-    color: var(--text-secondary);
-    margin-bottom: 4px;
-}
-
-#passwordForm {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    margin-top: 8px;
-}
-
-.password-input {
-    width: 100%;
-    padding: 12px 16px;
-    background: var(--bg-tertiary);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    color: var(--text-primary);
-    font-family: 'Outfit', sans-serif;
-    font-size: 15px;
-    outline: none;
-    transition: border-color 0.2s;
-}
-
-.password-input:focus {
-    border-color: var(--accent);
-}
-
-.password-error {
-    font-size: 13px;
-    color: var(--accent);
-    text-align: left;
-}
-
-.password-submit {
-    padding: 12px;
-    background: var(--gradient-1);
-    border: none;
-    border-radius: var(--radius-sm);
-    color: white;
-    font-family: 'Outfit', sans-serif;
-    font-size: 15px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 0.2s;
-}
-
-.password-submit:hover {
-    opacity: 0.85;
 }
 
 /* ── Modal icon variant ───────────────────────────────── */
