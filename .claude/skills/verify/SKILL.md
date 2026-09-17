@@ -9,7 +9,7 @@ Run from the repository root. Report each step as passed, failed (with output) o
 
 ## 1. Find a PHP ≥ 8 binary
 
-Try `php8` first (the maintainer's PHP 8 command), then `php`:
+Check both `php8` and `php` (either may be missing or be PHP 7.4, depending on the shell) and use the first that is PHP ≥ 8:
 
 ```bash
 for p in php8 php php8.3 php83; do

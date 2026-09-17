@@ -16,6 +16,7 @@ $root = dirname(__DIR__);
 $dataDir = str_replace('\\', '/', sys_get_temp_dir()) . '/yt-archiver-it-' . getmypid();
 $stateDir = "$dataDir/fake-state";
 $pgDir = str_replace('\\', '/', sys_get_temp_dir()) . '/yt-archiver-pg-' . getmypid();
+$envDataDir = "$dataDir-env"; // second installation, with the database from YTA_DB_* (docker-compose.yml)
 mkdir($stateDir, 0755, true);
 mkdir($pgDir, 0755, true);
 define('DATA_DIR', $dataDir);
@@ -594,6 +595,78 @@ try {
     $response = http('POST', '/login.php?action=logout', ['form' => ['csrf' => $csrf]]);
     check('sign-out works', $response['location'] === '/login.php' && http('GET', '/api.php?action=status')['status'] === 401
         && str_contains(http('GET', '/login.php')['body'], 'id="googleButton"'));
+
+    // ── Database deployed with the app (YTA_DB_* environment, as docker-compose.yml sets it) ──
+    // A fresh installation in its own data directory and database: step 1 asks only for Google, nothing about the database is saved
+    stopDevServer($serve);
+    $serve = null;
+    (new PDO("pgsql:host={$postgres['host']};port={$postgres['port']};dbname=postgres", $postgres['user'], $postgres['password']))->exec('CREATE DATABASE yta_env');
+    $dbEnv = ['YTA_DB_HOST' => $postgres['host'], 'YTA_DB_PORT' => (string)$postgres['port'], 'YTA_DB_NAME' => 'yta_env',
+        'YTA_DB_USER' => $postgres['user'], 'YTA_DB_PASSWORD' => $postgres['password']];
+    $mainDataDir = $dataDir;
+    $dataDir = $envDataDir;
+    mkdir($dataDir, 0755, true);
+    $jar = 'env';
+    try {
+        $serve = startDevServer($dbEnv);
+        $page = http('GET', '/setup.php');
+        check('setup uses the database deployed with the app', str_contains($page['body'], 'database deployed with the app is used') && str_contains($page['body'], 'yta_env @ ')
+            && !str_contains($page['body'], 'name="db_host"') && !str_contains($page['body'], 'name="db_password"'), $page['body']);
+        $envForm = ['token' => '', 'csrf' => formValue($page['body'], 'csrf'), 'db_mode' => 'environment',
+            'client_id' => '1234567890-test.apps.googleusercontent.com', 'base_url' => $baseUrl];
+        $response = http('POST', '/setup.php', ['form' => $envForm + ['intent' => 'test']]);
+        check('test connection checks the environment database', str_contains($response['body'], 'to database &quot;yta_env&quot;')
+            && !str_contains($response['body'], 'check error') && !is_file("$dataDir/config.php"), $response['body']);
+
+        $custom = http('GET', '/setup.php?db=custom');
+        check('another server can still be entered by hand', str_contains($custom['body'], 'name="db_host"') && str_contains($custom['body'], 'Use the database deployed with the app'));
+        $response = http('POST', '/setup.php', ['form' => array_merge($envForm, ['intent' => 'test', 'db_mode' => 'custom', 'db_host' => 'bad host!'])]);
+        check('the hand-entered form is validated', str_contains($response['body'], 'Database host:'));
+
+        $response = http('POST', '/setup.php', ['form' => $envForm + ['intent' => 'save']]);
+        $config = is_file("$dataDir/config.php") ? include "$dataDir/config.php" : [];
+        check('setup saves no database settings', $response['status'] === 303 && !array_key_exists('db', $config)
+            && ($config['google']['client_id'] ?? '') === '1234567890-test.apps.googleusercontent.com', $response['body'] . json_encode(array_keys($config)));
+        $tables = (new PDO("pgsql:host={$postgres['host']};port={$postgres['port']};dbname=yta_env", $postgres['user'], $postgres['password']))
+            ->query("SELECT to_regclass('public.users') IS NOT NULL")->fetchColumn();
+        check('setup creates the tables in the environment database', (bool)$tables);
+        $envToken = (string)($config['setup_token'] ?? '');
+        $html = http('GET', "/setup.php?token=$envToken")['body'];
+        check('step 2 names the environment database', str_contains($html, 'deployed with the app, YTA_DB_* variables') && dataAttribute($html, 'data-nonce') !== '');
+
+        // Setup reopened against a database that already has accounts (config.php lost, database volume kept): the environment
+        // supplies the password, so the browser must not be able to create an administrator; only the server-side CLI can
+        $config['google']['certs_endpoint'] = "$googleUrl/certs";
+        file_put_contents("$dataDir/config.php", '<?php return ' . var_export($config, true) . ';');
+        $envPdo = new PDO("pgsql:host={$postgres['host']};port={$postgres['port']};dbname=yta_env", $postgres['user'], $postgres['password']);
+        $envPdo->exec("INSERT INTO users (google_sub, email, role, status, approved_at) VALUES ('sub-earlier', 'earlier@example.com', 'admin', 'approved', now())");
+        $credential = googleIdToken(['iss' => 'https://accounts.google.com', 'aud' => dataAttribute($html, 'data-client-id'), 'sub' => 'sub-intruder',
+            'email' => 'intruder@example.com', 'email_verified' => true, 'nonce' => dataAttribute($html, 'data-nonce'), 'iat' => time(), 'exp' => time() + 3600]);
+        $response = http('POST', '/login.php?action=google', ['form' => ['csrf' => formValue($html, 'csrf'), 'credential' => $credential]]);
+        $intruders = (int)$envPdo->query("SELECT count(*) FROM users WHERE email = 'intruder@example.com'")->fetchColumn();
+        check('reopened setup cannot take over existing accounts', $response['location'] === "/setup.php?token=$envToken" && $intruders === 0
+            && (include "$dataDir/config.php")['installed'] === false, (string)$response['location']);
+        $html = http('GET', "/setup.php?token=$envToken")['body'];
+        check('reopened setup points to the server-side recovery', str_contains($html, 'already has an administrator') && dataAttribute($html, 'data-nonce') === '');
+
+        foreach ($dbEnv + ['YTA_DATA_DIR' => $dataDir] as $name => $value) {
+            putenv("$name=$value");
+        }
+        $output = runCommand([PHP_BINARY, "$root/public/setup.php", '--status'], $exitCode);
+        check('setup.php --status shows the environment database', $exitCode === 0 && str_contains((string)$output, 'Database: yta_env @ '), (string)$output);
+        $output = runCommand([PHP_BINARY, "$root/public/setup.php", '--migrate'], $exitCode);
+        check('setup.php --migrate uses the environment database', $exitCode === 0 && str_contains((string)$output, 'up to date'), (string)$output);
+        $output = runCommand([PHP_BINARY, "$root/public/setup.php", '--make-admin=earlier@example.com'], $exitCode);
+        check('setup.php --make-admin finishes the reopened installation', $exitCode === 0 && (include "$dataDir/config.php")['installed'] === true, (string)$output);
+    } finally {
+        foreach (array_keys($dbEnv) as $name) {
+            putenv($name);
+        }
+        stopDevServer($serve);
+        $serve = null;
+        $dataDir = $mainDataDir;
+        $jar = 'admin';
+    }
 } finally {
     stopDevServer($serve);
     stopProcess($google);
@@ -604,6 +677,7 @@ try {
     }
     usleep(500000);
     removeDir($dataDir);
+    removeDir($envDataDir);
     removeDir($pgDir);
 }
 

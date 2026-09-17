@@ -1,5 +1,3 @@
-version: "3.8"
-
 services:
   yt-archiver:
     image: ghcr.io/irelevant25/yt-archiver:latest
@@ -14,11 +12,20 @@ services:
       # - /home/user/Videos/youtube:/data/videos # For home directory
       # - ./videos:/data/videos                   # For local folder
       - /opt/yt-archiver/videos:/data/videos
-      
-      # Persistent database storage
+
+      # Settings, queue, library index and sessions
       - /opt/yt-archiver/data:/data
     environment:
       - TZ=UTC
+      # Accounts database: the postgres service below. Name and user must match its POSTGRES_* values.
+      # The password comes from YTA_DB_PASSWORD in a .env file next to this file (see .env.example).
+      # To use your own PostgreSQL server instead, point these at it, or remove them (and the postgres service)
+      # and enter the server in /setup.php.
+      - YTA_DB_HOST=postgres
+      - YTA_DB_PORT=5432
+      - YTA_DB_NAME=yt_archiver
+      - YTA_DB_USER=yt_archiver
+      - YTA_DB_PASSWORD=${YTA_DB_PASSWORD:-yt-archiver}
       # Proxy headers (CF-Connecting-IP, X-Real-IP, X-Forwarded-For) are trusted only from private IPs.
       # If a proxy reaches the container from a public IP (e.g. Cloudflare directly), list its IPs/CIDRs here.
       # - TRUSTED_PROXIES=173.245.48.0/20,103.21.244.0/22
@@ -26,25 +33,31 @@ services:
       # - MIN_FREE_SPACE_PERCENT=10
       # Ask for confirmation for downloads estimated at this size or more (GB). Default 1.
       # - LARGE_DOWNLOAD_WARNING_GB=1
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 10s
-    # Uncomment together with the postgres service below if you have no PostgreSQL server yet
-    # depends_on:
-    #   - postgres
 
-  # Sign-in needs a PostgreSQL database. Use an existing server, or uncomment this one and enter
-  # host "postgres", port 5432, database/user/password as below in /setup.php after the first start.
-  # postgres:
-  #   image: postgres:17-alpine
-  #   container_name: yt-archiver-postgres
-  #   restart: unless-stopped
-  #   environment:
-  #     - POSTGRES_DB=yt_archiver
-  #     - POSTGRES_USER=yt_archiver
-  #     - POSTGRES_PASSWORD=change-me
-  #   volumes:
-  #     - /opt/yt-archiver/postgres:/var/lib/postgresql/data
+  # Accounts database, deployed together with the app. It is reachable only from this stack (no published port).
+  postgres:
+    image: postgres:17-alpine
+    container_name: yt-archiver-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=yt_archiver
+      - POSTGRES_USER=yt_archiver
+      # Used only when the data directory is created: changing it later needs ALTER USER inside the database as well
+      - POSTGRES_PASSWORD=${YTA_DB_PASSWORD:-yt-archiver}
+    volumes:
+      - /opt/yt-archiver/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s

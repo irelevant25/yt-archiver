@@ -2,8 +2,9 @@
 /**
  * Configuration, PostgreSQL and Google sign-in.
  *
- * - The configuration (database, Google OAuth client ID, secret) is written by setup.php to DATA_DIR/config.php.
- *   /data is never served by nginx.
+ * - The configuration (Google OAuth client ID, secret, and a database entered by hand) is written by setup.php to
+ *   DATA_DIR/config.php. /data is never served by nginx. By default the database is the PostgreSQL service from
+ *   docker-compose.yml, passed in through YTA_DB_* environment variables (see databaseSettings()).
  * - Only "Sign in with Google" exists. New accounts are pending until an administrator approves them.
  * - Every request except /login.php (and /setup.php before the installation is finished) needs an approved user.
  *   nginx asks includes/auth_check.php (auth_request); dev/router.php calls authGate() directly;
@@ -82,16 +83,71 @@ function connectDatabase(string $dsn, string $user, string $password): PDO {
     return $pdo;
 }
 
+/**
+ * The database docker-compose.yml deploys next to the app (YTA_DB_HOST, YTA_DB_PORT, YTA_DB_NAME, YTA_DB_USER,
+ * YTA_DB_PASSWORD or YTA_DB_PASSWORD_FILE for a Docker secret). Null when YTA_DB_HOST is not set.
+ * @return array{dsn: string, user: string, password: string, source: 'environment'}|null
+ */
+function envDatabaseSettings(): ?array {
+    $host = trim((string)getenv('YTA_DB_HOST'));
+    if ($host === '') {
+        return null;
+    }
+    $passwordFile = trim((string)getenv('YTA_DB_PASSWORD_FILE'));
+    $password = $passwordFile !== ''
+        ? rtrim((string)@file_get_contents($passwordFile), "\r\n")
+        : (string)getenv('YTA_DB_PASSWORD');
+    return [
+        'dsn'      => pgsqlDsn($host, (int)numericEnv('YTA_DB_PORT', 5432), trim((string)getenv('YTA_DB_NAME')) ?: 'yt_archiver'),
+        'user'     => trim((string)getenv('YTA_DB_USER')) ?: 'yt_archiver',
+        'password' => $password,
+        'source'   => 'environment',
+    ];
+}
+
+/**
+ * The database to use. A server entered by hand in setup.php (saved in config.php) wins, so an existing installation keeps
+ * its accounts when the environment later gains YTA_DB_*; otherwise the environment. Null when neither is configured.
+ * @return array{dsn: string, user: string, password: string, source: 'config'|'environment'}|null
+ */
+function databaseSettings(): ?array {
+    $saved = appConfig()['db'] ?? null;
+    if (is_array($saved) && (string)($saved['dsn'] ?? '') !== '') {
+        return ['dsn' => (string)$saved['dsn'], 'user' => (string)($saved['user'] ?? ''), 'password' => (string)($saved['password'] ?? ''), 'source' => 'config'];
+    }
+    return envDatabaseSettings();
+}
+
+/** @return array{host?: string, port?: string, dbname?: string} */
+function parseDsn(string $dsn): array {
+    preg_match_all('/(host|port|dbname)=([^;]*)/', $dsn, $matches, PREG_SET_ORDER);
+    return array_column($matches, 2, 1);
+}
+
+/** "name @ host:port" of a pgsql DSN, for pages and status output (never the credentials). */
+function describeDsn(string $dsn): string {
+    $parts = parseDsn($dsn);
+    return ($parts['dbname'] ?? '?') . ' @ ' . ($parts['host'] ?? '?') . ':' . ($parts['port'] ?? '?');
+}
+
 function db(): PDO {
     static $pdo = null;
     if ($pdo === null) {
-        $cfg = appConfig()['db'] ?? null;
-        if (!is_array($cfg)) {
+        $settings = databaseSettings();
+        if ($settings === null) {
             throw new RuntimeException('The database is not configured yet. Open /setup.php.');
         }
-        $pdo = connectDatabase((string)$cfg['dsn'], (string)$cfg['user'], (string)$cfg['password']);
+        $pdo = connectDatabase($settings['dsn'], $settings['user'], $settings['password']);
     }
     return $pdo;
+}
+
+const EXISTING_ADMIN_MESSAGE = 'This database already has an administrator from an earlier installation, so the setup sign-in cannot create one. '
+    . 'Finish the installation on the server: php /var/www/html/setup.php --make-admin=you@example.com';
+
+/** The accounts database already belongs to an installation (checked before setup creates the first administrator; needs the migrations). */
+function hasApprovedAdmin(): bool {
+    return (bool)dbValue("SELECT EXISTS (SELECT 1 FROM users WHERE role = 'admin' AND status = 'approved')");
 }
 
 function dbAll(string $sql, array $params = []): array {

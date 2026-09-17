@@ -22,8 +22,8 @@ You are an expert in concurrent process management in PHP on Linux, reviewing YT
    - No partial file ever becomes visible in `/data/videos` or the library.
 4. Consider the scenarios: container restart mid-download, cancel during `rename`, cancel during zip `close()`, two browser tabs polling,
    a playlist with 0/1/500 entries, private videos, a disk-full error during download or zip.
-5. Where possible, prove or disprove a race with a small `php8` script against a temp `DATA_DIR` (see `tests/unit.php` for the pattern),
-   or end to end with `php8 tests/integration.php` and the fake yt-dlp (`SLOW…` IDs keep a job running).
+5. Where possible, prove or disprove a race with a small PHP script (`php8` or `php`, whichever is PHP >= 8) against a temp `DATA_DIR` (see `tests/unit.php` for the pattern),
+   or end to end with `tests/integration.php` and the fake yt-dlp (`SLOW…` IDs keep a job running).
 6. Remember that the process helpers differ per platform (Linux `/proc` and process groups, macOS `ps`, Windows `tasklist`/`taskkill`), and that
    under local dev the dispatcher in `dev/serve.php`, not the API, starts jobs. Check that changes hold on all of them.
 

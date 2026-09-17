@@ -1,8 +1,19 @@
 # Architecture
 
-YT Archiver is a self-hosted YouTube downloader: a single Docker container with a static
-frontend, a small PHP JSON API, and a background PHP worker that drives `yt-dlp`.
-There is no framework, no build step, no database server, and no Composer or npm dependencies.
+YT Archiver is a self-hosted YouTube downloader: an app container with a static frontend, a small PHP JSON API,
+and a background PHP worker that drives `yt-dlp`, deployed by `docker-compose.yml` together with a PostgreSQL container
+that holds only the accounts. There is no framework, no build step, and no Composer or npm dependencies.
+
+## Deployment (docker-compose.yml)
+
+| Service | Image | Role |
+|---|---|---|
+| `yt-archiver` | `ghcr.io/irelevant25/yt-archiver` | the app (below); `depends_on: postgres` (`service_healthy`) |
+| `postgres` | `postgres:17-alpine` | accounts database; `pg_isready` healthcheck, data in `/opt/yt-archiver/postgres`, **no published port** |
+
+The app gets the connection as `YTA_DB_HOST=postgres`, `YTA_DB_PORT`, `YTA_DB_NAME`, `YTA_DB_USER`, `YTA_DB_PASSWORD`. The password is
+`${YTA_DB_PASSWORD}` from `.env` (see `.env.example`) and is shared with `POSTGRES_PASSWORD`. A server entered by hand in setup still works
+and takes precedence (see authentication.md, "Which database").
 
 ## Container (Dockerfile, supervisord.conf, entrypoint.sh)
 
@@ -16,7 +27,7 @@ There is no framework, no build step, no database server, and no Composer or npm
 
 - Base image: `php:8.3-fpm-alpine`. The code targets **PHP 8.3** (`match`, `str_starts_with`, `mixed`, etc.).
 - Extensions used: `mbstring`, `posix`, `curl`, `json` (bundled) and `zip` (installed in the Dockerfile for `ZipArchive`).
-- `entrypoint.sh` fixes `/data` ownership, creates `database.json` and `queue.json`, then execs supervisord.
+- `entrypoint.sh` fixes `/data` ownership, creates `database.json` and `queue.json`, applies migrations once installed (retried while the database starts), then execs supervisord.
 - `www-data` may run exactly `sudo -n /usr/bin/pip3 install --upgrade yt-dlp --break-system-packages`
   (the sudoers rule and `updateYtDlp()` in `api.php` must stay identical).
 - CI: `.github/workflows/docker-publish.yml` builds amd64 and arm64 images and pushes them to `ghcr.io/irelevant25/yt-archiver` on pushes to `main` and `v*` tags.
@@ -91,6 +102,7 @@ Shutdown (Ctrl+C or `<data>/.dev-stop`) stops the server and puts the running jo
 | `TRUSTED_PROXIES` | common.php | proxies whose client-IP / `X-Forwarded-Proto` headers are trusted (besides private IPs) |
 | `MIN_FREE_SPACE_PERCENT` (10), `LARGE_DOWNLOAD_WARNING_GB` (1) | common.php | disk-space block and large-download confirmation thresholds |
 | `YTA_WORKER_LOG` | common.php | `1` enables `worker.log` outside local dev |
+| `YTA_DB_HOST`, `YTA_DB_PORT`, `YTA_DB_NAME`, `YTA_DB_USER`, `YTA_DB_PASSWORD`, `YTA_DB_PASSWORD_FILE` | auth.php `envDatabaseSettings()` | accounts database (the compose `postgres` service); used when setup saved no server of its own |
 
 ### Cross-platform process handling (common.php)
 
@@ -106,7 +118,7 @@ On Windows, `writeJson` retries `rename` and `readJson` retries reads, because r
 
 | Path | Content | Written by |
 |---|---|---|
-| `config.php` | settings from setup.php: PostgreSQL, Google OAuth client, base URL, secret, `installed` (0600) | setup.php, login.php (install finish) |
+| `config.php` | settings from setup.php: Google OAuth client, base URL, secret, `installed`, and PostgreSQL only if entered by hand (0600) | setup.php, login.php (install finish) |
 | `sessions/` | PHP session files (0700) | PHP |
 | `inspections/` | cached size checks (15 min) | API |
 | `database.json` | `{"videos": [...]}`: library entries | worker (add), API (delete) |
@@ -131,6 +143,7 @@ The entry `id` of an archive is the playlist job id (`pl_…`).
 ## Accounts (PostgreSQL)
 
 Only the `users` table (and `migrations`) lives in PostgreSQL; the queue and library stay in JSON files.
+By default it is the `postgres` service deployed with the app (`YTA_DB_*`); `databaseSettings()` in auth.php decides which server is used.
 Access rules, the Google flow and setup are described in [authentication.md](authentication.md).
 
 ## API (`public/api.php`)

@@ -22,16 +22,14 @@ A simple, self-hosted YouTube video/audio downloader with a beautiful web interf
 
 ## Quick Start
 
-You need a **PostgreSQL** database (for accounts) and a **Google OAuth client** (for sign-in).
-Everything else lives in the `/data` volume.
+You need a **Google OAuth client** (for sign-in). The **PostgreSQL** database for accounts is deployed together with the app
+by `docker-compose.yml`; everything else lives in the `/data` volume.
 
 ### Using Docker Compose (Recommended)
 
-1. Create a `docker-compose.yml` file:
+1. Create a `docker-compose.yml` file (the full version with comments is [docker-compose.yml](docker-compose.yml)):
 
 ```yaml
-version: "3.8"
-
 services:
   yt-archiver:
     image: ghcr.io/irelevant25/yt-archiver:latest
@@ -44,15 +42,49 @@ services:
       - /opt/yt-archiver/data:/data
     environment:
       - TZ=UTC
+      - YTA_DB_HOST=postgres
+      - YTA_DB_PORT=5432
+      - YTA_DB_NAME=yt_archiver
+      - YTA_DB_USER=yt_archiver
+      - YTA_DB_PASSWORD=${YTA_DB_PASSWORD:-yt-archiver}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: yt-archiver-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=yt_archiver
+      - POSTGRES_USER=yt_archiver
+      - POSTGRES_PASSWORD=${YTA_DB_PASSWORD:-yt-archiver}
+    volumes:
+      - /opt/yt-archiver/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 ```
 
-2. Start the container:
+2. Set a database password in a `.env` file next to it (see [.env.example](.env.example)). Do this **before the first start**:
+   PostgreSQL applies the password only when it creates its data directory.
 
 ```bash
-docker-compose up -d
+echo "YTA_DB_PASSWORD=$(openssl rand -hex 24)" > .env
 ```
 
-3. Open the web interface at `http://localhost:8080` and **finish the setup right away** (see below). Until then, anyone who
+   The database has no published port, so only the app can reach it. Without `.env` the default password `yt-archiver` is used.
+
+3. Start both containers:
+
+```bash
+docker compose up -d
+```
+
+4. Open the web interface at `http://localhost:8080` and **finish the setup right away** (see below). Until then, anyone who
    can reach the site could run it.
 
 ### Setup (first start)
@@ -60,12 +92,15 @@ docker-compose up -d
 Every page redirects to `/setup.php` until the installation is finished:
 
 1. **Step 1: database and Google.**
-   - **Database:** enter the PostgreSQL host, port, database, user and password. **Test connection** checks that the server is reachable,
-     that the credentials and database name are accepted, and that the user may create the tables, without saving anything.
+   - **Database:** with the compose file above, nothing to enter: the page shows the database deployed with the app.
+     **Test connection** checks that the server is reachable, that the credentials and database name are accepted, and that the
+     user may create the tables, without saving anything. To use another PostgreSQL server, click **Use another PostgreSQL server**
+     and enter its host, port, database, user and password (see [Database](#database)).
    - **Google:** enter the public URL of the site and the Google OAuth **client ID** (no client secret is needed). Create the
      client in the [Google Cloud console](https://console.cloud.google.com/apis/credentials): configure the OAuth consent screen, then
      *Create credentials → OAuth client ID → Web application*, with the **authorized JavaScript origin** `https://<your host>`.
-   - **Check and save** tests the database again, creates the tables and saves everything to `/data/config.php` (readable only by the container).
+   - **Check and save** tests the database again, creates the tables and saves the settings to `/data/config.php` (readable only by the container).
+     The password of the bundled database stays in the environment; only a server entered by hand is saved there.
 2. **Step 2: sign in with Google.** This tests the Google configuration. The account you sign in with becomes the
    **administrator**, and the installation is finished. `/setup.php` returns 404 afterwards.
 
@@ -80,20 +115,51 @@ After that:
 Command-line helpers inside the container:
 
 ```bash
-docker exec yt-archiver php /var/www/html/setup.php --status                 # state, or the setup link if unfinished
+docker exec yt-archiver php /var/www/html/setup.php --status                 # database in use, state, or the setup link if unfinished
 docker exec yt-archiver php /var/www/html/setup.php --make-admin=you@gmail.com   # recovery: make that email an admin (creates the account if needed)
 ```
 
-Database migrations run automatically when the container starts.
+Database migrations run automatically when the container starts (retried for up to about a minute while PostgreSQL is still starting).
 
 ### Using Portainer
 
 1. Go to **Stacks** → **Add stack**
 2. Name your stack: `yt-archiver`
 3. Paste the docker-compose.yml content
-4. Deploy the stack
+4. Under **Environment variables**, add `YTA_DB_PASSWORD` with a random value
+5. Deploy the stack
 
 ## Configuration
+
+### Database
+
+By default the accounts database is the `postgres` service from `docker-compose.yml`. The app finds it through these variables:
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `YTA_DB_HOST` | (none) | PostgreSQL host. When it is not set, the database is entered in `/setup.php` instead |
+| `YTA_DB_PORT` | `5432` | port |
+| `YTA_DB_NAME` | `yt_archiver` | database (must exist; the tables are created automatically) |
+| `YTA_DB_USER` | `yt_archiver` | user (needs `CREATE` on schema `public`) |
+| `YTA_DB_PASSWORD` | empty | password |
+| `YTA_DB_PASSWORD_FILE` | (none) | read the password from this file instead, e.g. a Docker secret (`/run/secrets/…`) |
+
+**Using your own PostgreSQL server** instead of the bundled one, either:
+- point the `YTA_DB_*` variables at it and remove the `postgres` service and `depends_on`, or
+- remove the `YTA_DB_*` variables and the `postgres` service, and enter the server in `/setup.php`.
+  You can also click **Use another PostgreSQL server** during setup even when the variables are set.
+
+A server entered in `/setup.php` is saved in `/data/config.php` and **takes precedence** over the `YTA_DB_*` variables. This way an
+installation that already uses its own server keeps its accounts after you switch to this compose file. To move such an installation
+to the bundled database, copy the data over (`pg_dump` / `pg_restore`) and delete the `'db'` entry from `/data/config.php`.
+`setup.php --status` shows which database is in use.
+
+If `/data/config.php` is lost but the database still has an administrator, the setup page does not create a new one (otherwise anyone
+reaching the site first would take over the accounts). Enter the Google settings again, then finish on the server with
+`docker exec yt-archiver php /var/www/html/setup.php --make-admin=you@gmail.com`.
+
+The bundled database lives in `/opt/yt-archiver/postgres`. Back it up with
+`docker exec yt-archiver-postgres pg_dump -U yt_archiver yt_archiver > yt-archiver.sql`.
 
 ### Volume Paths
 
@@ -107,7 +173,7 @@ volumes:
   # Or in your home directory
   - ~/Videos/youtube:/data/videos
   
-  # Database and settings
+  # Settings, queue and library index
   - /opt/yt-archiver/data:/data
 ```
 
@@ -202,8 +268,8 @@ The header shows the current and latest yt-dlp versions. Click **Update yt-dlp**
 ├─────────────────────────────────────────┤
 │  yt-dlp + ffmpeg                        │
 └─────────────────────────────────────────┘
-         │
-         ▼
+         │                         │ postgres:5432 (compose network)
+         ▼                         ▼
 ┌─────────────────────────────────────────┐
 │            /data (volume)               │
 ├─────────────────────────────────────────┤
@@ -212,6 +278,10 @@ The header shows the current and latest yt-dlp versions. Click **Update yt-dlp**
 │  queue.json    - Download queue         │
 │  progress.json - Current progress       │
 │  videos/.staging/ - In-progress work    │
+└─────────────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│  PostgreSQL container: accounts         │
+│  /opt/yt-archiver/postgres (volume)     │
 └─────────────────────────────────────────┘
 ```
 
@@ -248,16 +318,19 @@ cd yt-archiver
 # Build the Docker image
 docker build -t yt-archiver .
 
-# Run locally
+# Run locally (setup then asks for a PostgreSQL server, see Database)
 docker run -d -p 8080:80 -v $(pwd)/data:/data yt-archiver
 ```
+
+To run the built image together with the bundled database, set `image: yt-archiver` in `docker-compose.yml` and run `docker compose up -d`.
 
 ## Local Development (without Docker)
 
 Works on Windows, Linux and macOS. Requirements:
 
 - PHP 8.0+ CLI with `mbstring`, `openssl` and `pdo_pgsql` (`zip` for playlists; missing extensions whose files exist are enabled automatically)
-- A PostgreSQL database and a Google OAuth client ID, entered in `/setup.php` on the first visit like in Docker.
+- A PostgreSQL database and a Google OAuth client ID, entered in `/setup.php` on the first visit like in Docker
+  (or give the database with the `YTA_DB_*` variables, see [Database](#database)).
   For local testing, open **`http://localhost:8080`** (not 127.0.0.1: Google rejects IP origins), use it as the public URL, and add both
   `http://localhost` and `http://localhost:8080` as authorized JavaScript origins of the client.
 - yt-dlp and ffmpeg are **downloaded automatically** on Windows x64 and Linux x86_64 (see below).
@@ -293,7 +366,7 @@ The Linux `yt-dlp` build is a Python zipapp and needs `python3` ≥ 3.9.
 | `YTA_YTDLP_BIN` | yt-dlp command instead of the managed one, e.g. a full path, or `php tests/fixtures/fake-yt-dlp.php` to work offline |
 | `YTA_WORKER_LOG` | `1` enables `worker.log` outside local development |
 | `YTA_DATA_DIR` | data directory (set by `dev/serve.php` from `--data`) |
-| `TRUSTED_PROXIES`, `MIN_FREE_SPACE_PERCENT`, `LARGE_DOWNLOAD_WARNING_GB` | same as in Docker |
+| `TRUSTED_PROXIES`, `MIN_FREE_SPACE_PERCENT`, `LARGE_DOWNLOAD_WARNING_GB`, `YTA_DB_*` | same as in Docker |
 
 ### Tests
 

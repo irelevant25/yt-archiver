@@ -214,6 +214,33 @@ check('gate: app needs sign-in before setup', 401, authGate('/'));
 check('gate: API needs sign-in', 401, authGate('/api.php?action=status'));
 check('gate: encoded path still gated', 401, authGate('/%6Cogin.php.html'));
 
+// ── Database settings: config.php (entered in setup) wins over the environment (docker-compose service) ──
+$dbEnv = ['YTA_DB_HOST', 'YTA_DB_PORT', 'YTA_DB_NAME', 'YTA_DB_USER', 'YTA_DB_PASSWORD', 'YTA_DB_PASSWORD_FILE'];
+foreach ($dbEnv as $name) {
+    putenv($name);
+}
+check('db: nothing configured', null, databaseSettings());
+putenv('YTA_DB_HOST=postgres');
+check('db: environment defaults', ['dsn' => 'pgsql:host=postgres;port=5432;dbname=yt_archiver', 'user' => 'yt_archiver', 'password' => '', 'source' => 'environment'], databaseSettings());
+putenv('YTA_DB_PORT=6543');
+putenv('YTA_DB_NAME=archive');
+putenv('YTA_DB_USER=app');
+putenv('YTA_DB_PASSWORD=from-env');
+check('db: environment values', ['dsn' => 'pgsql:host=postgres;port=6543;dbname=archive', 'user' => 'app', 'password' => 'from-env', 'source' => 'environment'], databaseSettings());
+file_put_contents("$dataDir/db-secret", "from-file\n");
+putenv("YTA_DB_PASSWORD_FILE=$dataDir/db-secret");
+check('db: password file wins, trailing newline removed', 'from-file', databaseSettings()['password']);
+check('db: description has no credentials', 'archive @ postgres:6543', describeDsn(databaseSettings()['dsn']));
+saveConfig(['db' => ['dsn' => 'pgsql:host=db.example;port=5432;dbname=own', 'user' => 'own', 'password' => 'secret']]);
+check('db: server entered in setup wins', ['dsn' => 'pgsql:host=db.example;port=5432;dbname=own', 'user' => 'own', 'password' => 'secret', 'source' => 'config'], databaseSettings());
+saveConfig(['google' => ['client_id' => 'x']]);
+check('db: without a saved server the environment is used', 'environment', databaseSettings()['source'] ?? null);
+unlink(CONFIG_FILE);
+appConfig(true);
+foreach ($dbEnv as $name) {
+    putenv($name);
+}
+
 // ── Worker refuses to start on low disk space ────────────
 saveQueue(['queue' => [], 'current' => ['id' => 'vid_disk', 'type' => 'video', 'url' => 'u', 'format' => 'mp3', 'title' => 'Disk'], 'pid' => null]);
 $worker = proc_open(

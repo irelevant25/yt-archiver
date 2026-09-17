@@ -55,6 +55,11 @@ if ($action === 'google' && $_SERVER['REQUEST_METHOD'] === 'POST') {
             if (isInstalled()) {
                 throw new RuntimeException('The installation is already finished.');
             }
+            // A reopened setup (config.php lost, database kept) must not hand the existing accounts to whoever gets there first:
+            // with YTA_DB_* the database needs no password in the form. Proving access to the server is required instead.
+            if (hasApprovedAdmin()) {
+                throw new RuntimeException(EXISTING_ADMIN_MESSAGE);
+            }
             $user = upsertGoogleUser($result['claims'], true);
             $config = appConfig();
             $config['installed'] = true;

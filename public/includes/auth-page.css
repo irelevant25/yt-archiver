@@ -42,6 +42,7 @@ a { color: #8fa2ff; }
 .check.error { background: var(--accent-dim); color: var(--text-primary); }
 .check.error::before { content: '✗'; color: var(--accent); }
 .actions > button.secondary { flex: 0 0 auto; }
+.actions > .hint { align-self: center; }
 .user-card { display: flex; align-items: center; gap: 12px; text-align: left; background: var(--bg-tertiary); border-radius: 10px; padding: 12px 14px; margin-bottom: 16px; }
 .user-card img, .user-card .avatar { width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; background: var(--bg-hover); display: flex; align-items: center; justify-content: center; font-weight: 700; }
 .user-card div { min-width: 0; }

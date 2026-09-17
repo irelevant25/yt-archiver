@@ -22,7 +22,7 @@ You review changes to YT Archiver (a PHP 8.3 + nginx + yt-dlp Docker app with an
    setup.php 404 after installation and token-protected while in progress, no secrets or SQL errors leaked to responses.
 5. Check concurrency safety that has security impact: read-modify-write without `withLock`, non-atomic writes, and cancel paths that could delete
    files outside `.staging/` or the one library file.
-6. Verify each suspected issue by reading the actual code path (and by running small `php8` or node snippets when useful; `php` on the maintainer's PATH is 7.4). Discard anything you cannot
+6. Verify each suspected issue by reading the actual code path (and by running small PHP or node snippets when useful; for PHP use `php8` or `php`, whichever is PHP >= 8, see CLAUDE.md). Discard anything you cannot
    demonstrate with a concrete input.
 
 ## Output

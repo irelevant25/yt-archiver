@@ -7,16 +7,28 @@ Accounts live in PostgreSQL; everything else (queue, library, logs) stays in JSO
 
 | File | Role |
 |---|---|
-| `public/includes/auth.php` | config file, PDO + migrations, sessions, `currentUser()`, `authGate()`, Google ID token verification, `googleSignInWidget()`, `renderAuthPage()` |
+| `public/includes/auth.php` | config file, database settings (`databaseSettings()`), PDO + migrations, sessions, `currentUser()`, `authGate()`, Google ID token verification, `googleSignInWidget()`, `renderAuthPage()` |
 | `public/includes/auth_check.php` | nginx `auth_request` endpoint: 204 allowed / 401 sign in / 403 admin-only |
 | `public/includes/migrations/NNN_*.sql` | applied in name order, recorded in the `migrations` table (`002` renamed `blocked` → `disabled`) |
 | `public/includes/auth-page.css` | inlined into login/setup pages (no static file is reachable before sign-in) |
 | `public/login.php` | sign-in page, `POST ?action=google` (ID token), pending/disabled status page, sign-out |
 | `public/setup.php` | one-time installation wizard (with "Test connection") + CLI (`--status`, `--migrate`, `--make-admin=EMAIL`) |
 | `public/users.html`, `js/users.js`, `css/users.css` | admin account management (API `users`, `user`) |
-| `DATA_DIR/config.php` | written by setup: `db` {dsn,user,password}, `google` {client_id[, certs_endpoint]}, `base_url`, `secret`, `setup_token` (until installed), `installed`, `installed_at`. Mode 0600 |
+| `DATA_DIR/config.php` | written by setup: `db` {dsn,user,password} **only for a server entered by hand**, `google` {client_id[, certs_endpoint]}, `base_url`, `secret`, `setup_token` (until installed), `installed`, `installed_at`. Mode 0600 |
 | `DATA_DIR/google-certs.json` | cached Google signing certificates (for as long as Google's `Cache-Control` allows, max 24 h) |
 | `DATA_DIR/sessions/` | PHP session files (0700); persist across container restarts |
+| `docker-compose.yml`, `.env.example` | deploy the app together with a `postgres:17-alpine` service and pass its connection in as `YTA_DB_*` |
+
+## Which database (`databaseSettings()`)
+
+1. `config.php` `db`: a server entered by hand in setup (the "Use another PostgreSQL server" form). It **wins**, so an installation made before the
+   compose file shipped a database keeps its accounts when `YTA_DB_*` appear later.
+2. `envDatabaseSettings()`: `YTA_DB_HOST` (required to enable it), `YTA_DB_PORT` (5432), `YTA_DB_NAME` (`yt_archiver`), `YTA_DB_USER` (`yt_archiver`),
+   `YTA_DB_PASSWORD`, or `YTA_DB_PASSWORD_FILE` (Docker secret; wins over `YTA_DB_PASSWORD`, trailing newline stripped). This is the default deployment.
+3. Neither: `db()` throws, `authGate()` fails closed, setup shows the hand-entry form.
+
+The environment's credentials are **never written** to `config.php`. The php-fpm image sets `clear_env = no`, so the container environment
+reaches php-fpm and the workers. `describeDsn()` (name @ host:port, no credentials) is what pages and `--status` show.
 
 ## The gate: every request except `/login.php` and `/setup.php`
 
@@ -70,7 +82,11 @@ Google Cloud console: OAuth client of type **Web application** with the **Author
 | `config.php`, `installed=false` | needs `?token=`; step 2 "Sign in with Google" button; `&edit=1` shows step 1 again (an empty password keeps the saved one) | same |
 | `installed=true` | **404** | gate as above |
 
-- **Step 1:** a double-submit CSRF cookie (`yta_setup_csrf`, path `/setup.php`, SameSite Strict; an existing cookie is reused, see below) protects the form, which has two submit buttons:
+- **Step 1:** a double-submit CSRF cookie (`yta_setup_csrf`, path `/setup.php`, SameSite Strict; an existing cookie is reused, see below) protects the form, which has two submit buttons.
+  **Database mode** (hidden `db_mode`, switched with the `?db=environment|custom` links; default `environment` unless `config.php` already has `db`):
+  - `environment` (only when `YTA_DB_*` is set): no database fields; the page shows `describeDsn()` and the user. Test and save use `envDatabaseSettings()`,
+    and the saved config has **no `db` key** (an old one is dropped).
+  - `custom`: the host/port/name/user/password fields below, validated and saved in `config.php`.
   - `intent=test` ("Test connection") validates only the database fields and runs `testDatabase()`: TCP reachability (`fsockopen`), then sign-in
     (PDO; wrong password, unknown role and missing database are reported with PostgreSQL's message, without the SQLSTATE prefix), then permissions
     (`has_schema_privilege('public', 'CREATE')`, or existing tables from an earlier installation). Nothing is saved; the typed values
@@ -79,10 +95,15 @@ Google Cloud console: OAuth client of type **Web application** with the **Author
     writes the config with a new `setup_token`.
 - **Step 2:** a Google sign-in whose session carries `setup=true` (only granted by the token-protected step 2 page). The account becomes
   an approved admin, `installed=true` is set, `setup_token` is removed, and the admin is signed in. Errors return to `setup.php?token=…` with a flash message.
-- **Recovery:** `php setup.php --status` prints the setup link. `php setup.php --make-admin=EMAIL` approves and promotes the account with that email,
+  **Refused when the database already has an approved admin** (`hasApprovedAdmin()`, checked in login.php and hiding the button on the page).
+  Otherwise losing `config.php` while the database volume survives would reopen setup, and with `YTA_DB_*` the visitor needs no database password to
+  attach the existing accounts. Such an installation is finished on the server with `setup.php --make-admin=EMAIL`.
+- **Recovery:** `php setup.php --status` prints the database in use (`databaseDescription()`: name @ host:port and its source) and the setup link.
+  `php setup.php --make-admin=EMAIL` approves and promotes the account with that email,
   or adds an approved admin account in advance if none exists (and marks the installation finished).
-- Migrations run on start: `entrypoint.sh` (Docker) and `dev/serve.php` (local) both call `setup.php --migrate`.
-- `entrypoint.sh` runs `setup.php --migrate` on every container start.
+- Migrations run on start once `config.php` exists: `entrypoint.sh` (Docker) and `dev/serve.php` (local) both call `setup.php --migrate`.
+  `entrypoint.sh` retries up to 6 times, 5 s apart, because the database container may still be starting. Compose's `depends_on: service_healthy`
+  is not applied when Docker restarts containers after a reboot.
 
 ## Accounts API (admin)
 

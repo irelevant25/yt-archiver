@@ -7,3 +7,6 @@ CLAUDE.local.md
 
 # yt-dlp/ffmpeg downloaded by dev/serve.php
 .dev-tools/
+
+# Deployment secrets for docker-compose.yml (see .env.example)
+.env

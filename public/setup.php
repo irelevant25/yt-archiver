@@ -5,7 +5,9 @@
  * Browser (only until the installation is finished, afterwards 404):
  *   1. /setup.php                  database (with a "Test connection" button) + Google OAuth client ID + public URL
  *                                  → connection check, migrations,
- *                                  DATA_DIR/config.php is written together with a setup token
+ *                                  DATA_DIR/config.php is written together with a setup token.
+ *                                  The database defaults to the one deployed with the app (YTA_DB_* environment,
+ *                                  not saved); ?db=custom enters another server, which is saved in config.php.
  *   2. /setup.php?token=…          "Sign in with Google": proves the Google configuration works; that account
  *                                  becomes the approved administrator and the installation is finished
  *      /setup.php?token=…&edit=1   change the settings of step 1
@@ -62,6 +64,14 @@ if ($editing) {
 }
 
 function settingsStep(array $config, bool $hasConfig, string $token): void {
+    $envDb = envDatabaseSettings();
+    // The database deployed with the app is the default. A server entered by hand earlier stays selected,
+    // and "Use another PostgreSQL server" switches to the form (?db=custom, kept in db_mode on submit).
+    $mode = (string)($_POST['db_mode'] ?? $_GET['db'] ?? '');
+    if (!in_array($mode, ['environment', 'custom'], true)) {
+        $mode = isset($config['db']) ? 'custom' : 'environment';
+    }
+    $useEnv = $mode === 'environment' && $envDb !== null;
     $db = parseDsn((string)($config['db']['dsn'] ?? ''));
     $form = [
         'db_host'     => trim((string)($_POST['db_host'] ?? $db['host'] ?? '127.0.0.1')),
@@ -83,15 +93,17 @@ function settingsStep(array $config, bool $hasConfig, string $token): void {
         if ($csrf === '' || !hash_equals($csrf, (string)($_POST['csrf'] ?? ''))) {
             $errors[] = 'The form expired. Please submit it again.';
         }
-        if (!preg_match('/^[A-Za-z0-9._-]{1,253}$/', $form['db_host'])) {
-            $errors[] = 'Database host: letters, digits, dots, dashes and underscores only.';
-        }
-        if (!ctype_digit($form['db_port']) || (int)$form['db_port'] < 1 || (int)$form['db_port'] > 65535) {
-            $errors[] = 'Database port must be a number between 1 and 65535.';
-        }
-        foreach (['db_name' => 'Database name', 'db_user' => 'Database user'] as $field => $label) {
-            if (!preg_match('/^[A-Za-z0-9._-]{1,63}$/', $form[$field])) {
-                $errors[] = "$label: 1–63 letters, digits, dots, dashes or underscores.";
+        if (!$useEnv) {
+            if (!preg_match('/^[A-Za-z0-9._-]{1,253}$/', $form['db_host'])) {
+                $errors[] = 'Database host: letters, digits, dots, dashes and underscores only.';
+            }
+            if (!ctype_digit($form['db_port']) || (int)$form['db_port'] < 1 || (int)$form['db_port'] > 65535) {
+                $errors[] = 'Database port must be a number between 1 and 65535.';
+            }
+            foreach (['db_name' => 'Database name', 'db_user' => 'Database user'] as $field => $label) {
+                if (!preg_match('/^[A-Za-z0-9._-]{1,63}$/', $form[$field])) {
+                    $errors[] = "$label: 1–63 letters, digits, dots, dashes or underscores.";
+                }
             }
         }
         if ($intent === 'save') {
@@ -103,15 +115,18 @@ function settingsStep(array $config, bool $hasConfig, string $token): void {
             }
         }
 
+        $connection = $useEnv
+            ? $envDb
+            : ['dsn' => pgsqlDsn($form['db_host'], (int)$form['db_port'], $form['db_name']), 'user' => $form['db_user'], 'password' => $password];
         if (!$errors) {
-            $testResults = testDatabase($form['db_host'], (int)$form['db_port'], $form['db_name'], $form['db_user'], $password);
+            $target = parseDsn($connection['dsn']);
+            $testResults = testDatabase((string)($target['host'] ?? ''), (int)($target['port'] ?? 5432), (string)($target['dbname'] ?? ''), $connection['user'], $connection['password']);
         }
         $databaseOk = $testResults && !in_array('error', array_column($testResults, 0), true);
 
         if (!$errors && $intent === 'save' && $databaseOk) {
-            $dsn = pgsqlDsn($form['db_host'], (int)$form['db_port'], $form['db_name']);
             try {
-                $applied = migrateDatabase(connectDatabase($dsn, $form['db_user'], $password));
+                $applied = migrateDatabase(connectDatabase($connection['dsn'], $connection['user'], $connection['password']));
                 error_log('[setup] migrations applied: ' . ($applied ? implode(', ', $applied) : 'none'));
 
                 $google = ['client_id' => $form['client_id']];
@@ -120,14 +135,18 @@ function settingsStep(array $config, bool $hasConfig, string $token): void {
                     $google['certs_endpoint'] = $config['google']['certs_endpoint'];
                 }
                 $newToken = (string)($config['setup_token'] ?? bin2hex(random_bytes(24)));
-                saveConfig([
-                    'db'          => ['dsn' => $dsn, 'user' => $form['db_user'], 'password' => $password],
+                $settings = [
                     'google'      => $google,
                     'base_url'    => $form['base_url'],
                     'secret'      => (string)($config['secret'] ?? bin2hex(random_bytes(32))),
                     'setup_token' => $newToken,
                     'installed'   => false,
-                ]);
+                ];
+                // The environment's credentials stay in the environment: only a server entered by hand is saved
+                if (!$useEnv) {
+                    $settings = ['db' => $connection] + $settings;
+                }
+                saveConfig($settings);
                 header('Location: /setup.php?token=' . rawurlencode($newToken), true, 303);
                 exit;
             } catch (Throwable $e) {
@@ -153,18 +172,31 @@ function settingsStep(array $config, bool $hasConfig, string $token): void {
     }
     $origin = preg_match('~^https?://[^/]+$~', $form['base_url']) ? $form['base_url'] : 'https://yt.example.com';
 
-    $body .= '<p>Step 1 of 2: connect the PostgreSQL database and the Google sign-in. Everything is stored in <code>' . e(CONFIG_FILE) . '</code>.</p>'
+    $modeUrl = fn(string $mode) => '/setup.php?' . http_build_query(array_filter(['token' => $token, 'edit' => $hasConfig ? '1' : null, 'db' => $mode]));
+
+    if ($useEnv) {
+        $databaseFields = '<p>The PostgreSQL database deployed with the app is used: <code>' . e(describeDsn($envDb['dsn'])) . '</code>, user <code>' . e($envDb['user']) . '</code>. '
+            . 'Its connection comes from the <code>YTA_DB_*</code> environment variables (see docker-compose.yml) and is not stored in the settings file. Tables are created automatically.</p>';
+        $databaseSwitch = '<a href="' . e($modeUrl('custom')) . '">Use another PostgreSQL server</a>';
+    } else {
+        $databaseFields = '<div class="row"><label>Host<input name="db_host" value="' . e($form['db_host']) . '" required></label>'
+            . '<label class="small">Port<input name="db_port" value="' . e($form['db_port']) . '" inputmode="numeric" required></label></div>'
+            . '<label>Database name<input name="db_name" value="' . e($form['db_name']) . '" required><span class="hint">The database must exist; tables are created automatically.</span></label>'
+            . '<div class="row"><label>User<input name="db_user" value="' . e($form['db_user']) . '" required autocomplete="off"></label>'
+            . '<label>Password<input type="password" name="db_password" value="' . e($form['db_password']) . '"'
+            . ($hasConfig ? ' placeholder="unchanged"' : '') . ' autocomplete="new-password"></label></div>';
+        $databaseSwitch = $envDb !== null ? '<a href="' . e($modeUrl('environment')) . '">Use the database deployed with the app</a>' : '';
+    }
+
+    $body .= '<p>Step 1 of 2: connect the PostgreSQL database and the Google sign-in. The settings are stored in <code>' . e(CONFIG_FILE) . '</code>.</p>'
         . '<form method="post" action="/setup.php' . ($token !== '' ? '?token=' . e(rawurlencode($token)) : '') . '">'
         . '<input type="hidden" name="csrf" value="' . e($csrf) . '"><input type="hidden" name="token" value="' . e($token) . '">'
+        . '<input type="hidden" name="db_mode" value="' . ($useEnv ? 'environment' : 'custom') . '">'
         . '<h2>PostgreSQL</h2>'
-        . '<div class="row"><label>Host<input name="db_host" value="' . e($form['db_host']) . '" required></label>'
-        . '<label class="small">Port<input name="db_port" value="' . e($form['db_port']) . '" inputmode="numeric" required></label></div>'
-        . '<label>Database name<input name="db_name" value="' . e($form['db_name']) . '" required><span class="hint">The database must exist; tables are created automatically.</span></label>'
-        . '<div class="row"><label>User<input name="db_user" value="' . e($form['db_user']) . '" required autocomplete="off"></label>'
-        . '<label>Password<input type="password" name="db_password" value="' . e($form['db_password']) . '"'
-        . ($hasConfig ? ' placeholder="unchanged"' : '') . ' autocomplete="new-password"></label></div>'
+        . $databaseFields
         . ($results !== '' ? '<ul class="checks">' . $results . '</ul>' : '')
-        . '<div class="actions"><button type="submit" name="intent" value="test" class="secondary" formnovalidate>Test connection</button></div>'
+        . '<div class="actions">' . ($databaseSwitch !== '' ? '<span class="hint">' . $databaseSwitch . '</span>' : '')
+        . '<button type="submit" name="intent" value="test" class="secondary" formnovalidate>Test connection</button></div>'
         . '<h2>Google sign-in</h2>'
         . '<p class="hint">Only the client ID is needed: the browser receives a signed ID token from Google, and the server verifies it with Google\'s public keys.</p>'
         . '<ol><li>Open <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer">Google Cloud console → APIs &amp; Services → Credentials</a>.</li>'
@@ -203,7 +235,7 @@ function testDatabase(string $host, int $port, string $dbname, string $user, str
             has_schema_privilege('public', 'CREATE') AS can_create, to_regclass('public.users') IS NOT NULL AS has_users")->fetch();
         $results[] = ['success', "Signed in as \"{$info['db_user']}\" to database \"$dbname\" (PostgreSQL {$info['version']})."];
         if ($info['has_users']) {
-            $results[] = ['success', 'The tables already exist from an earlier installation and will be reused.'];
+            $results[] = ['success', 'The tables already exist from an earlier installation and will be reused. If it has an administrator, the installation is finished on the server with setup.php --make-admin.'];
         } elseif ($info['can_create']) {
             $results[] = ['success', 'The user may create the tables.'];
         } else {
@@ -222,22 +254,33 @@ function cleanDatabaseError(Throwable $e): string {
 }
 
 function signInStep(array $config, string $token, ?string $flashMessage): void {
-    $db = parseDsn((string)($config['db']['dsn'] ?? ''));
     $body = $flashMessage !== null ? '<p class="notice error" role="alert">' . e($flashMessage) . '</p>' : '';
+    try {
+        $existingAdmin = hasApprovedAdmin();
+    } catch (Throwable $e) {
+        $existingAdmin = false; // the sign-in checks again and reports the database error
+    }
     $body .= '<p class="notice success">The database is connected and its tables are ready.</p>'
-        . '<p>Step 2 of 2: sign in with Google. This tests the Google configuration, and <strong>the account you sign in with becomes the administrator</strong>. '
-        . 'Everyone who signs in later has to be approved by an administrator.</p>'
-        . googleSignInWidget(true)
-        . '<p class="footer">Database <code>' . e(($db['dbname'] ?? '?') . ' @ ' . ($db['host'] ?? '?') . ':' . ($db['port'] ?? '?')) . '</code><br>'
+        . ($existingAdmin && $flashMessage !== EXISTING_ADMIN_MESSAGE
+            ? '<p class="notice warning">' . e(EXISTING_ADMIN_MESSAGE) . '</p>'
+            : '')
+        . ($existingAdmin
+            ? ''
+            : '<p>Step 2 of 2: sign in with Google. This tests the Google configuration, and <strong>the account you sign in with becomes the administrator</strong>. '
+                . 'Everyone who signs in later has to be approved by an administrator.</p>' . googleSignInWidget(true))
+        . '<p class="footer">Database <code>' . e(databaseDescription()) . '</code><br>'
         . 'JavaScript origin <code>' . e(baseUrl()) . '</code> · Client ID <code>' . e($config['google']['client_id'] ?? '') . '</code><br>'
         . 'The button does not appear or Google reports an error? Check that the origin above is registered for this client ID.<br>'
         . '<a href="/setup.php?token=' . e(rawurlencode($token)) . '&amp;edit=1">Change settings</a></p>';
     renderAuthPage('Setup', $body, true);
 }
 
-function parseDsn(string $dsn): array {
-    preg_match_all('/(host|port|dbname)=([^;]*)/', $dsn, $matches, PREG_SET_ORDER);
-    return array_column($matches, 2, 1);
+function databaseDescription(): string {
+    $settings = databaseSettings();
+    if ($settings === null) {
+        return 'not configured';
+    }
+    return describeDsn($settings['dsn']) . ($settings['source'] === 'environment' ? ' (deployed with the app, YTA_DB_* variables)' : ' (entered in setup)');
 }
 
 function detectedBaseUrl(): string {
@@ -258,6 +301,7 @@ function setupCli(): int {
         }
 
         if (isset($options['status'])) {
+            $say('Database: ' . databaseDescription());
             if (!is_file(CONFIG_FILE)) {
                 $say('Not configured: open /setup.php in the browser.');
                 return 0;

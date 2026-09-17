@@ -37,6 +37,11 @@ or a failure with `YTA_TEST_REQUIRE_PG=1`. initdb refuses to run as root (CI con
 Auth part:
 - **Setup over HTTP:** forged CSRF, validation, and "Test connection" (success, unreachable server, missing database, unknown role).
   Saving is refused while the database fails, then succeeds.
+- **Database from the environment** (last phase): a second installation in its own data directory and a second database (`yta_env`) of the same
+  throwaway cluster, with the dev server started with `YTA_DB_*`. Checks: no database fields, Test connection hits that database, `?db=custom` still
+  offers the form, saving writes no `db` key but creates the tables, and `setup.php --status`/`--migrate` use it. Then an approved admin is inserted
+  directly (a reopened setup over existing accounts): the setup sign-in is refused and creates no account, and `--make-admin` finishes the installation.
+  `tests/unit.php` covers the resolution order (config over environment, defaults, `YTA_DB_PASSWORD_FILE`).
 - **Fake Google:** the config file is edited so `google.certs_endpoint` points at `tests/fixtures/fake-google.php`, a second `php -S`
   that publishes `tests/fixtures/google-test-cert.pem`.
 - **Acting like Google's button:** the test reads `data-client-id`, `data-nonce` and `csrf` from the page, signs an ID token with

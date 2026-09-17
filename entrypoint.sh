@@ -26,9 +26,21 @@ if [ ! -f /data/queue.json ]; then
     chown www-data:www-data /data/queue.json
 fi
 
-# Apply new database migrations after an upgrade (no-op before the installation)
+# Apply new database migrations after an upgrade (no-op before the installation). Retried because PostgreSQL may
+# still be starting: depends_on is not honoured when Docker restarts the containers after a reboot.
 if [ -f /data/config.php ]; then
-    php /var/www/html/setup.php --migrate || echo "WARNING: database migrations failed, sign-in may not work"
+    migrated=0
+    for attempt in 1 2 3 4 5 6; do
+        if php /var/www/html/setup.php --migrate; then
+            migrated=1
+            break
+        fi
+        echo "Database not ready (attempt $attempt), retrying in 5 s"
+        sleep 5
+    done
+    if [ "$migrated" != 1 ]; then
+        echo "WARNING: database migrations failed, sign-in may not work"
+    fi
 fi
 
 # Start supervisord

@@ -3,7 +3,8 @@
 Self-hosted YouTube downloader in one Docker container: nginx + php-fpm (PHP 8.3, Alpine) + yt-dlp/ffmpeg.
 Vanilla JS frontend, JSON-file storage in `/data`, a background PHP worker, and a single-job FIFO queue.
 Playlists are expanded into per-item jobs and end up in the library as one ZIP.
-Access requires Google sign-in and an administrator's approval; accounts are stored in PostgreSQL, configured once through `setup.php`.
+Access requires Google sign-in and an administrator's approval; accounts are stored in PostgreSQL, which `docker-compose.yml` deploys
+alongside the app (connection via `YTA_DB_*`; a server entered by hand in `setup.php` still works and wins). Google is configured once through `setup.php`.
 
 ## Knowledge base: read before changing code
 
@@ -29,7 +30,10 @@ When a change alters behaviour described there, **update the knowledge base in t
 - **Git:** commits are authored as `irelevant25 <frantisekpastorek@gmail.com>` (set in the repo-local git config; check with
   `git config user.email` before committing). **Never commit or push until the user has reviewed the changes and asked for it.**
 - Target **PHP 8.3** in the container, and keep the code working on **PHP ≥ 8.0 on Windows, Linux and macOS** for local dev.
-  **Use the `php8` command** for PHP on the maintainer's machine; `php` on PATH is 7.4, which cannot parse this code.
+  **Pick the PHP binary by checking both `php8` and `php`** (either may be missing, and either may be PHP 7.4, which cannot parse this code;
+  it depends on the shell). Use the first one that exists and reports PHP ≥ 8.0, and don't assume one of them without checking:
+  `for p in php8 php; do command -v $p >/dev/null && $p -r 'exit(PHP_VERSION_ID >= 80000 ? 0 : 1);' && { PHP=$p; break; }; done`.
+  The integration test also needs `pdo_pgsql` loaded in that binary (`$PHP -m`).
 - Platform-specific code lives only in `includes/common.php` (`IS_WINDOWS`, `NULL_DEVICE`, spawn/alive/kill helpers). Never hardcode `/dev/null`,
   `/proc` or `yt-dlp` elsewhere; use `NULL_DEVICE`, `isWorkerAlive()` and `ytDlpCommand()`.
 - `dev/router.php` mirrors `nginx.conf`: change both together.
@@ -46,20 +50,23 @@ When a change alters behaviour described there, **update the knowledge base in t
   `currentUser()`/`isApproved()` itself (it is also behind nginx `auth_request` and `dev/router.php`). Admin-only pages go into `ADMIN_PATHS`,
   admin-only API actions call `requireAdmin()`. Never weaken `verifyGoogleIdToken()` (RS256 signature against Google's certificates), `validateIdTokenClaims()`, the single-use nonce, or the setup 404 after installation. Google sign-in needs only the client ID: never add a client secret.
 - DB schema changes: add a new file in `public/includes/migrations/` and never edit an applied one. Never write DB credentials or secrets anywhere
-  except `DATA_DIR/config.php`.
+  except `DATA_DIR/config.php` (a server entered by hand) or the deployment environment (`YTA_DB_*`, `.env`; never commit `.env`).
+  Resolve the database only through `databaseSettings()`.
 - Never use the maintainer's own PostgreSQL service (port 5433) or its credentials: tests create a throwaway cluster themselves.
 - Match the existing style: 4-space indentation, PHP helper functions (no classes except small exceptions), sparse comments explaining *why*.
 - The working tree uses CRLF on Windows (`core.autocrlf=true`) while the repo stores LF; `*.sh` is forced to LF.
 
 ## Commands
 
+`$PHP` is `php8` or `php`, whichever is PHP ≥ 8 (see Hard rules).
+
 ```bash
-php8 dev/serve.php                                         # run locally without Docker → http://127.0.0.1:8080 (auto-provisions yt-dlp + ffmpeg in .dev-tools/)
-php8 dev/serve.php --update-tools                          # force the yt-dlp/ffmpeg update check
-YTA_YTDLP_BIN="php8 tests/fixtures/fake-yt-dlp.php" php8 dev/serve.php --no-tools   # run offline with the fake yt-dlp
-php8 tests/unit.php && node tests/frontend.test.js         # unit tests
-php8 tests/integration.php                                 # end-to-end over HTTP: setup, fake Google sign-in, accounts, downloads (~45 s, throwaway PostgreSQL)
-php8 public/setup.php --status                             # with YTA_DATA_DIR=.dev-data for the local instance
-php8 -l public/api.php                                     # lint (one file per call)
+$PHP dev/serve.php                                         # run locally without Docker → http://127.0.0.1:8080 (auto-provisions yt-dlp + ffmpeg in .dev-tools/)
+$PHP dev/serve.php --update-tools                          # force the yt-dlp/ffmpeg update check
+YTA_YTDLP_BIN="$PHP tests/fixtures/fake-yt-dlp.php" $PHP dev/serve.php --no-tools   # run offline with the fake yt-dlp
+$PHP tests/unit.php && node tests/frontend.test.js         # unit tests
+$PHP tests/integration.php                                 # end-to-end over HTTP: setup, fake Google sign-in, accounts, downloads (~45 s, throwaway PostgreSQL)
+$PHP public/setup.php --status                             # with YTA_DATA_DIR=.dev-data for the local instance
+$PHP -l public/api.php                                     # lint (one file per call)
 docker build -t yt-archiver:dev .                          # full image (if Docker is available)
 ```
