@@ -49,7 +49,7 @@ services:
       - YTA_DB_PASSWORD=${YTA_DB_PASSWORD:-yt-archiver}
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
 
   postgres:
     image: postgres:17-alpine
@@ -119,7 +119,7 @@ docker exec yt-archiver php /var/www/html/setup.php --status                 # d
 docker exec yt-archiver php /var/www/html/setup.php --make-admin=you@gmail.com   # recovery: make that email an admin (creates the account if needed)
 ```
 
-Database migrations run automatically when the container starts (retried for up to about a minute while PostgreSQL is still starting).
+Database migrations run automatically when the container starts (retried for up to 2 minutes while PostgreSQL is still starting).
 
 ### Using Portainer
 

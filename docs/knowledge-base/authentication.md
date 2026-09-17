@@ -102,8 +102,8 @@ Google Cloud console: OAuth client of type **Web application** with the **Author
   `php setup.php --make-admin=EMAIL` approves and promotes the account with that email,
   or adds an approved admin account in advance if none exists (and marks the installation finished).
 - Migrations run on start once `config.php` exists: `entrypoint.sh` (Docker) and `dev/serve.php` (local) both call `setup.php --migrate`.
-  `entrypoint.sh` retries up to 6 times, 5 s apart, because the database container may still be starting. Compose's `depends_on: service_healthy`
-  is not applied when Docker restarts containers after a reboot.
+  `entrypoint.sh` retries up to 24 times, 5 s apart (2 min), because the database container may still be starting: compose only waits for it to be
+  started (`service_started`), and `depends_on` is not applied at all when Docker restarts containers after a reboot.
 
 ## Accounts API (admin)
 

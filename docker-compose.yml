@@ -33,9 +33,11 @@ services:
       # - MIN_FREE_SPACE_PERCENT=10
       # Ask for confirmation for downloads estimated at this size or more (GB). Default 1.
       # - LARGE_DOWNLOAD_WARNING_GB=1
+    # Only waits until the postgres container runs, not until it is healthy: on a first start its initialisation can outlast
+    # the healthcheck, and compose would then leave this container in "Created" for good. The app retries the database itself.
     depends_on:
       postgres:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
       interval: 30s

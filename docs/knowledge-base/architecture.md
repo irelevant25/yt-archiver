@@ -8,7 +8,7 @@ that holds only the accounts. There is no framework, no build step, and no Compo
 
 | Service | Image | Role |
 |---|---|---|
-| `yt-archiver` | `ghcr.io/irelevant25/yt-archiver` | the app (below); `depends_on: postgres` (`service_healthy`) |
+| `yt-archiver` | `ghcr.io/irelevant25/yt-archiver` | the app (below); `depends_on: postgres` (`service_started`: with `service_healthy` a slow first initdb made compose abort and leave the app in Created) |
 | `postgres` | `postgres:17-alpine` | accounts database; `pg_isready` healthcheck, data in `/opt/yt-archiver/postgres`, **no published port** |
 
 The app gets the connection as `YTA_DB_HOST=postgres`, `YTA_DB_PORT`, `YTA_DB_NAME`, `YTA_DB_USER`, `YTA_DB_PASSWORD`. The password is

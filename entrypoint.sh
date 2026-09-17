@@ -27,10 +27,11 @@ if [ ! -f /data/queue.json ]; then
 fi
 
 # Apply new database migrations after an upgrade (no-op before the installation). Retried because PostgreSQL may
-# still be starting: depends_on is not honoured when Docker restarts the containers after a reboot.
+# still be starting (initdb on the first start takes a while): compose waits only until its container runs, and depends_on
+# is not honoured at all when Docker restarts the containers after a reboot.
 if [ -f /data/config.php ]; then
     migrated=0
-    for attempt in 1 2 3 4 5 6; do
+    for attempt in $(seq 1 24); do
         if php /var/www/html/setup.php --migrate; then
             migrated=1
             break
